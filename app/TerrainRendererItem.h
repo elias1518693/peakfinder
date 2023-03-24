@@ -51,6 +51,7 @@ signals:
     void touch_made(const nucleus::event_parameter::Touch&) const;
     //    void viewport_changed(const glm::uvec2& new_viewport) const;
     void position_set_by_user(double new_latitude, double new_longitude);
+    void position_with_height_set_by_user(double new_latitude, double new_longitude, double new_height);
 
     void camera_changed();
     void camera_width_changed();
@@ -67,6 +68,7 @@ protected:
 
 public slots:
     void set_position(double latitude, double longitude);
+    void set_position(double latitude, double longitude, double height);
 
 private slots:
     void schedule_update();

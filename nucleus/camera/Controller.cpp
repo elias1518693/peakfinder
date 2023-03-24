@@ -61,6 +61,14 @@ void Controller::set_latitude_longitude(double latitude, double longitude)
         0.0 });
 }
 
+void Controller::set_latitude_longitude_height(double latitude, double longitude, double height)
+{
+    const auto xy_world_space = srs::lat_long_to_world({ latitude, longitude });
+    move({ xy_world_space.x - m_definition.position().x,
+        xy_world_space.y - m_definition.position().y,
+       height - m_definition.position().z});
+}
+
 void Controller::set_field_of_view(float fov_degrees)
 {
     if (qFuzzyCompare(m_definition.field_of_view(), fov_degrees))

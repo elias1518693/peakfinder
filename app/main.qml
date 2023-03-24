@@ -93,6 +93,13 @@ Window {
                         search_button.focus = true
                         if (text.length <= 2)
                             return
+                        if (text.toString().startsWith("pos")){
+                            var splitString = text.toString().split(" ")
+                            if(splitString.length !== 4)
+                                return
+                            map.set_position(splitString[1], splitString[2], splitString[3])
+                            return
+                        }
                         var xhr = new XMLHttpRequest
                         xhr.onreadystatechange = function() {
                             console.log("xhr.onreadystatechange")

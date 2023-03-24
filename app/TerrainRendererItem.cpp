@@ -155,6 +155,7 @@ QQuickFramebufferObject::Renderer* TerrainRendererItem::createRenderer() const
     connect(this, &TerrainRendererItem::mouse_moved, r->controller()->camera_controller(), &nucleus::camera::Controller::mouse_move);
     connect(this, &TerrainRendererItem::wheel_turned, r->controller()->camera_controller(), &nucleus::camera::Controller::wheel_turn);
     connect(this, &TerrainRendererItem::position_set_by_user, r->controller()->camera_controller(), &nucleus::camera::Controller::set_latitude_longitude);
+     connect(this, &TerrainRendererItem::position_with_height_set_by_user, r->controller()->camera_controller(), &nucleus::camera::Controller::set_latitude_longitude_height);
 
     auto* const tile_scheduler = r->controller()->tile_scheduler();
     connect(this, &TerrainRendererItem::render_quality_changed, r->controller()->tile_scheduler(), [=](float new_render_quality) {
@@ -202,6 +203,11 @@ void TerrainRendererItem::set_position(double latitude, double longitude)
     RenderThreadNotifier::instance()->notify();
 }
 
+void TerrainRendererItem::set_position(double latitude, double longitude, double height)
+{
+    emit position_with_height_set_by_user(latitude, longitude, height);
+    RenderThreadNotifier::instance()->notify();
+}
 void TerrainRendererItem::schedule_update()
 {
     //    qDebug("void MyFrameBufferObject::schedule_update()");
