@@ -190,6 +190,17 @@ void Framebuffer::bind_colour_texture(unsigned index)
     f->glBindTexture(GL_TEXTURE_2D, m_colour_texture->textureId());
 }
 
+void Framebuffer::bind_colour_texture_to_binding(unsigned index, unsigned binding)
+{
+    if (index != 0)
+        throw std::logic_error("not implemented");
+
+    QOpenGLFunctions* f = QOpenGLContext::currentContext()->functions();
+    f->glActiveTexture(GL_TEXTURE0 + binding);
+    f->glBindTexture(GL_TEXTURE_2D, m_colour_texture->textureId());
+
+}
+
 std::unique_ptr<QOpenGLTexture> Framebuffer::take_and_replace_colour_attachment(unsigned index)
 {
     if (index != 0)

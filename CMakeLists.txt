@@ -60,6 +60,8 @@ set(ALP_GL_SHADERS
     gl_shaders/tile.frag
     gl_shaders/tile.vert
     gl_shaders/depth.frag
+    gl_shaders/panorama.frag
+    gl_shaders/panorama.vert
 )
 set(ALP_PLAIN_RENDERER_SOURCES
     plain_renderer/main.cpp

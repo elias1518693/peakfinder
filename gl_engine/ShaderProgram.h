@@ -25,6 +25,7 @@ public:
     ShaderProgram(Files vertex_shader_parts, Files fragment_shader_parts);
 
     int attribute_location(const std::string& name);
+    int uniform_location(const std::string& name);
     void bind();
     void release();
 

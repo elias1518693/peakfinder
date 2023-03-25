@@ -76,6 +76,14 @@ int ShaderProgram::attribute_location(const std::string& name)
     return m_cached_attribs.at(name);
 }
 
+int ShaderProgram::uniform_location(const std::string& name)
+{
+    if (!m_cached_uniforms.contains(name))
+        m_cached_uniforms[name] = m_q_shader_program->uniformLocation(name.c_str());
+
+    return m_cached_uniforms.at(name);
+}
+
 void ShaderProgram::bind()
 {
     m_q_shader_program->bind();
@@ -130,7 +138,6 @@ void ShaderProgram::set_uniform_array(const std::string& name, const std::vector
 
     m_q_shader_program->setUniformValueArray(uniform_location, reinterpret_cast<const float*>(array.data()), int(array.size()), 4);
 }
-
 void ShaderProgram::reload()
 {
     if (m_vertex_shader_parts.empty() || m_fragment_shader_parts.empty())

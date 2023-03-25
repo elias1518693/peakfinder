@@ -184,6 +184,52 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
 }
 
+void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
+
+    m_frame_start = std::chrono::time_point_cast<ClockResolution>(Clock::now());
+    QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
+
+    // DEPTH BUFFER
+    m_camera.set_viewport_size(m_depth_buffer->size());
+    m_depth_buffer->bind();
+    f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    f->glEnable(GL_DEPTH_TEST);
+    f->glDepthFunc(GL_LESS);
+
+    m_shader_manager->depth_program()->bind();
+    m_tile_manager->draw(m_shader_manager->depth_program(), m_camera);
+    m_depth_buffer->unbind();
+    // END DEPTH BUFFER
+
+    m_camera.set_viewport_size(m_framebuffer->size());
+
+    m_shader_manager->tile_shader()->bind();
+    f->glClearColor(1.0, 0.0, 0.5, 1);
+    std::vector<glm::dmat4>vp = m_camera.local_view_projection_matrix_cube(m_camera.position());
+    std::vector<std::unique_ptr<Framebuffer>>fb(6);
+    for(uint i = 0; i < 6; i++){
+                fb[i] = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
+                fb[i]->resize(m_framebuffer->size());
+                fb[i]->bind();
+                f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+                f->glEnable(GL_DEPTH_TEST);
+                f->glDepthFunc(GL_LESS);
+                m_tile_manager->draw_view(m_shader_manager->tile_shader(), m_camera, vp[i]);
+                fb[i]->unbind();
+    }
+    if (framebuffer)
+        framebuffer->bind();
+    m_shader_manager->panorama_program()->bind();
+    for(uint i = 0; i < 6; i++){
+        fb[i]->bind_colour_texture_to_binding(0, i);
+        f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
+    }
+    m_screen_quad_geometry.draw();
+    m_shader_manager->release();
+    f->glFinish(); // synchronization
+    m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
+}
+
 void Window::paintOverGL(QPainter* painter)
 {
     const auto frame_duration = (m_frame_end - m_frame_start);

@@ -101,6 +101,27 @@ void TileManager::draw(ShaderProgram* shader_program, const nucleus::camera::Def
     f->glBindVertexArray(0);
 }
 
+void TileManager::draw_view(ShaderProgram* shader_program, const nucleus::camera::Definition& camera, glm::dmat4 view_matrix) const
+{
+    shader_program->set_uniform("matrix",  view_matrix) ;
+    QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
+    shader_program->set_uniform("n_edge_vertices", N_EDGE_VERTICES);
+    shader_program->set_uniform("camera_position", glm::vec3(camera.position()));
+    shader_program->set_uniform("texture_sampler", 0);
+//    shader_program->set_uniform("texture_sampler", 0);
+
+    const auto draw_tiles = m_draw_list_generator.generate_for(camera);
+    for (const auto& tileset : tiles()) {
+        if (!draw_tiles.contains(tileset.tiles.front().first))
+            continue;
+        tileset.vao->bind();
+        shader_program->set_uniform_array("bounds", boundsArray(tileset, camera.position()));
+        tileset.ortho_texture->bind(0);
+        f->glDrawElements(GL_TRIANGLE_STRIP, tileset.gl_element_count, tileset.gl_index_type, nullptr);
+    }
+    f->glBindVertexArray(0);
+}
+
 void TileManager::add_tile(const std::shared_ptr<nucleus::Tile>& tile)
 {
     if (!QOpenGLContext::currentContext()) // can happen during shutdown.

@@ -119,6 +119,32 @@ std::vector<geometry::Plane<double>> nucleus::camera::Definition::clipping_plane
     return clipping_panes;
 }
 
+std::vector<glm::dmat4> nucleus::camera::Definition::local_view_projection_matrix_cube(const glm::dvec3& origin_offset) const
+{
+    std::vector<glm::dmat4>cubemap_view_projection_matrices(6);
+    glm::dmat4 camera_transformation= glm::lookAt(position(), position() + glm::dvec3(1,0,0), { 0, -1, 0 });
+    cubemap_view_projection_matrices[0] = m_projection_matrix * camera_transformation * glm::translate(origin_offset);
+
+    camera_transformation = glm::lookAt(position(), position() + glm::dvec3(-1,0,0), { 0, -1, 0});
+    cubemap_view_projection_matrices[1] = m_projection_matrix * camera_transformation * glm::translate(origin_offset);
+
+
+    camera_transformation= glm::lookAt(position(), position() + glm::dvec3(0,1,0), { 0, 0, 1 });
+    cubemap_view_projection_matrices[2] = m_projection_matrix * camera_transformation * glm::translate(origin_offset);
+
+    camera_transformation = glm::lookAt(position(), position() + glm::dvec3(0,-1,0), { 0, 0, -1 });
+    cubemap_view_projection_matrices[3] = m_projection_matrix * camera_transformation * glm::translate(origin_offset);
+
+    camera_transformation= glm::lookAt(position(), position() + glm::dvec3(0,0,1), { 0, -1, 0 });
+    cubemap_view_projection_matrices[4] = m_projection_matrix * camera_transformation * glm::translate(origin_offset);
+
+    camera_transformation = glm::lookAt(position(), position() + glm::dvec3(0,0,-1), { 0, -1, 0 });
+    cubemap_view_projection_matrices[5] = m_projection_matrix * camera_transformation * glm::translate(origin_offset);
+
+    return cubemap_view_projection_matrices;
+}
+
+
 std::vector<geometry::Plane<double>> nucleus::camera::Definition::four_clipping_planes() const
 {
     const auto clippingPane = [this](const glm::dvec2& a, const glm::dvec2& b) {
