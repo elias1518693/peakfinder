@@ -16,16 +16,37 @@ vec2 cubeMapTo2D(in vec3 cubeVec) {
     float x, y;
 
     if (absX >= absY && absX >= absZ) { // X is the biggest
-        x = cubeVec.z / cubeVec.x;
-        y = -cubeVec.y / cubeVec.x;
+        if (cubeVec.x > 0.0) {
+            x = -cubeVec.z/absX;
+            y = -cubeVec.y/absX;
+        }
+        else {
+            x = cubeVec.z/absX;
+            y = -cubeVec.y/absX;
+        }
+
     }
     else if (absY >= absX && absY >= absZ) { // Y is the biggest
-        x = cubeVec.x / cubeVec.y;
-        y = cubeVec.z / cubeVec.y;
+        if (cubeVec.y > 0.0) {
+            x = cubeVec.x/absY;
+            y = cubeVec.z/absY;
+        }
+        else {
+            x = cubeVec.x/absY;
+            y = -cubeVec.z/absY;
+        }
+
     }
     else { // Z is the biggest
-        x = cubeVec.x / cubeVec.z;
-        y = -cubeVec.y / cubeVec.z;
+        if (cubeVec.z > 0.0) {
+            x = cubeVec.x/absZ;
+            y = -cubeVec.y/absZ;
+        }
+        else {
+            x = -cubeVec.x/absZ;
+            y = -cubeVec.y/absZ;
+        }
+
     }
 
     // Map [-1, 1] to [0, 1]
@@ -76,5 +97,6 @@ void main() {
     float z = texcoords.y * tan(fov/2.0);
     float y = sin(texcoords.x * pi);
 
-    out_Color = texture(getSampler(vec3(x,y,z)), cubeMapTo2D(vec3(x,y,z)));
+    out_Color = texture(getSampler(vec3(x,y,z)), cubeMapTo2D(normalize(vec3(x,y,z))));
+    //out_Color = vec4(cubeMapTo2D(vec3(x,y,z)),0,1);
 }

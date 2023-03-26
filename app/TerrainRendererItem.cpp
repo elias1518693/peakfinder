@@ -89,7 +89,7 @@ public:
     void render() Q_DECL_OVERRIDE
     {
         m_window->beginExternalCommands();
-        m_glWindow->paint(this->framebufferObject());
+        m_glWindow->paintPanorama(this->framebufferObject());
         m_window->endExternalCommands();
     }
 
