@@ -224,6 +224,7 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
         fb[i]->bind_colour_texture_to_binding(0, i);
         f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
     }
+    m_shader_manager->panorama_program()->set_uniform("fov",90.0f);
     m_screen_quad_geometry.draw();
     m_shader_manager->release();
     f->glFinish(); // synchronization

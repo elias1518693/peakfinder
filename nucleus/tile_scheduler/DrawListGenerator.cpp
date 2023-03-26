@@ -67,7 +67,7 @@ DrawListGenerator::TileSet DrawListGenerator::generate_for(const nucleus::camera
     visible_leaves.reserve(all_leaves.size());
 
     const auto is_visible = [&camera, this](const tile::Id& tile) {
-        return tile_scheduler::cameraFrustumContainsTile(camera, m_aabb_decorator->aabb(tile));
+        return true;
     };
 
     std::copy_if(all_leaves.begin(), all_leaves.end(), sherpa::unordered_inserter(visible_leaves), is_visible);

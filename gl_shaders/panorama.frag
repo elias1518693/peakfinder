@@ -5,7 +5,7 @@ uniform sampler2D texture_sampler2;
 uniform sampler2D texture_sampler3;
 uniform sampler2D texture_sampler4;
 uniform sampler2D texture_sampler5;
-
+uniform float fov = 90.0;
 out lowp vec4 out_Color;
 
 vec2 cubeMapTo2D(in vec3 cubeVec) {
@@ -87,16 +87,47 @@ sampler2D getSampler(in vec3 cubeVec) {
     }
 }
 
+vec4 debugColor(in vec3 cubeVec) {
+    float absX = abs(cubeVec.x);
+    float absY = abs(cubeVec.y);
+    float absZ = abs(cubeVec.z);
+
+    if (absX >= absY && absX >= absZ) { // X is the biggest
+        if (cubeVec.x > 0.0) {
+            return vec4(1,0,0,1);
+        }
+        else {
+            return vec4(1,0,0,1);
+        }
+    }
+    else if (absY >= absX && absY >= absZ) { // Y is the biggest
+        if (cubeVec.y > 0.0) {
+            return vec4(0,1,0,1);
+        }
+        else {
+            return vec4(0,1,0,1);
+        }
+    }
+    else { // Z is the biggest
+        if (cubeVec.z > 0.0) {
+            return vec4(0,0,1,1);
+        }
+        else {
+            return vec4(0,0,1,1);
+        }
+    }
+}
+
 void main() {
 
-    float fov = 90.0;
+
     float pi = 3.1415926535897932384626433f;
 
 
     float x = cos(texcoords.x * pi);
-    float z = texcoords.y * tan(fov/2.0);
+    float z = texcoords.y * radians(fov);
     float y = sin(texcoords.x * pi);
 
     out_Color = texture(getSampler(vec3(x,y,z)), cubeMapTo2D(normalize(vec3(x,y,z))));
-    //out_Color = vec4(cubeMapTo2D(vec3(x,y,z)),0,1);
+    //out_Color = debugColor(normalize(vec3(x,y,z)));
 }
