@@ -123,10 +123,10 @@ void main() {
 
     float pi = 3.1415926535897932384626433f;
 
-
-    float x = cos(texcoords.x * pi);
+    float x = sin(texcoords.x * pi);
+    float y = cos(texcoords.x * pi);
     float z = texcoords.y * radians(fov);
-    float y = sin(texcoords.x * pi);
+
 
     out_Color = texture(getSampler(vec3(x,y,z)), cubeMapTo2D(normalize(vec3(x,y,z))));
     //out_Color = debugColor(normalize(vec3(x,y,z)));

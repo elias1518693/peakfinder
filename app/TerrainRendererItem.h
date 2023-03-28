@@ -97,7 +97,7 @@ public:
 
 private:
     QPointF m_camera_operation_center;
-    float m_field_of_view = 75;
+    float m_field_of_view = 90;
     int m_frame_limit = 60;
     float m_render_quality = 0.5f;
 
