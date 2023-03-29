@@ -31,7 +31,7 @@
 #include <QQuickWindow>
 #include <QThread>
 #include <QTimer>
-
+#include <QImageReader>
 #include "RenderThreadNotifier.h"
 #include "gl_engine/Window.h"
 #include "nucleus/Controller.h"
@@ -156,6 +156,7 @@ QQuickFramebufferObject::Renderer* TerrainRendererItem::createRenderer() const
     connect(this, &TerrainRendererItem::wheel_turned, r->controller()->camera_controller(), &nucleus::camera::Controller::wheel_turn);
     connect(this, &TerrainRendererItem::position_set_by_user, r->controller()->camera_controller(), &nucleus::camera::Controller::set_latitude_longitude);
      connect(this, &TerrainRendererItem::position_with_height_set_by_user, r->controller()->camera_controller(), &nucleus::camera::Controller::set_latitude_longitude_height);
+     connect(this, &TerrainRendererItem::process_image, r->controller()->render_window(), &nucleus::AbstractRenderWindow::process_image);
 
     auto* const tile_scheduler = r->controller()->tile_scheduler();
     connect(this, &TerrainRendererItem::render_quality_changed, r->controller()->tile_scheduler(), [=](float new_render_quality) {
@@ -206,6 +207,20 @@ void TerrainRendererItem::set_position(double latitude, double longitude)
 void TerrainRendererItem::set_position(double latitude, double longitude, double height)
 {
     emit position_with_height_set_by_user(latitude, longitude, height);
+    RenderThreadNotifier::instance()->notify();
+}
+
+void TerrainRendererItem::load_image(QString path)
+{
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    reader.setAllocationLimit(2000);
+    const QImage image = reader.read();
+    if (image.isNull()) {
+        qWarning() << reader.errorString();
+        return;
+    }
+    emit process_image(image);
     RenderThreadNotifier::instance()->notify();
 }
 void TerrainRendererItem::schedule_update()

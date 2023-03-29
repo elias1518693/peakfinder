@@ -43,6 +43,9 @@ public:
 
     tile_scheduler::GpuCacheTileScheduler* tile_scheduler() const;
 
+    nucleus::AbstractRenderWindow* render_window()const;
+
+
 private:
     AbstractRenderWindow* m_render_window;
     QNetworkAccessManager m_network_manager;

@@ -46,6 +46,7 @@ public:
     virtual void initialise_gpu() = 0;
     virtual void resize_framebuffer(int width, int height) = 0;
     virtual void paint(QOpenGLFramebufferObject* framebuffer = nullptr) = 0;
+    virtual void paintPanorama(QOpenGLFramebufferObject* framebuffer = nullptr) = 0;
     virtual void deinit_gpu() = 0;
     virtual void set_permissible_screen_space_error(float new_error) = 0;
     [[nodiscard]] virtual camera::AbstractDepthTester* depth_tester() = 0;
@@ -56,6 +57,7 @@ public slots:
     virtual void set_aabb_decorator(const tile_scheduler::AabbDecoratorPtr&) = 0;
     virtual void add_tile(const std::shared_ptr<nucleus::Tile>&) = 0;
     virtual void remove_tile(const tile::Id&) = 0;
+    virtual void process_image(const QImage&) = 0;
 
 signals:
     void update_requested();

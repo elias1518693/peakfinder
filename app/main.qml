@@ -95,9 +95,12 @@ Window {
                             return
                         if (text.toString().startsWith("pos")){
                             var splitString = text.toString().split(" ")
-                            if(splitString.length !== 4)
-                                return
-                            map.set_position(splitString[1], splitString[2], splitString[3])
+                            if(splitString.length === 4)
+                                map.set_position(splitString[1], splitString[2], splitString[3])
+                            if(splitString.length === 5){
+                                map.set_position(splitString[1], splitString[2], splitString[3])
+                                map.load_image( splitString[4])
+                            }
                             return
                         }
                         var xhr = new XMLHttpRequest

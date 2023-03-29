@@ -21,6 +21,7 @@
 #include <QCoreApplication>
 #include <QFile>
 #include <QNetworkReply>
+#include <QImage>
 #ifdef ALP_ENABLE_THREADING
 #include <QThread>
 #endif
@@ -43,15 +44,15 @@ Controller::Controller(AbstractRenderWindow* render_window)
     qRegisterMetaType<nucleus::event_parameter::Touch>();
     qRegisterMetaType<nucleus::event_parameter::Mouse>();
     qRegisterMetaType<nucleus::event_parameter::Wheel>();
-
+    qRegisterMetaType<QImage>();
     m_camera_controller = std::make_unique<nucleus::camera::Controller>(nucleus::camera::stored_positions::westl_hochgrubach_spitze(), m_render_window->depth_tester());
     //    nucleus::camera::Controller camera_controller { nucleus::camera::stored_positions::stephansdom() };
 
     m_terrain_service = std::make_unique<TileLoadService>("https://alpinemaps.cg.tuwien.ac.at/tiles/alpine_png/", TileLoadService::UrlPattern::ZXY, ".png");
     //    m_ortho_service.reset(new TileLoadService("https://tiles.bergfex.at/styles/bergfex-osm/", TileLoadService::UrlPattern::ZXY_yPointingSouth, ".jpeg"));
-       m_ortho_service.reset(new TileLoadService("https://alpinemaps.cg.tuwien.ac.at/tiles/ortho/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg"));
-    //m_ortho_service.reset(new TileLoadService(
-      //  "https://maps%1.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg", { "", "1", "2", "3", "4" }));
+    //   m_ortho_service.reset(new TileLoadService("https://alpinemaps.cg.tuwien.ac.at/tiles/ortho/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg"));
+    m_ortho_service.reset(new TileLoadService(
+        "https://maps%1.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg", { "", "1", "2", "3", "4" }));
 
     m_tile_scheduler = std::make_unique<nucleus::tile_scheduler::GpuCacheTileScheduler>();
     m_tile_scheduler->set_gpu_cache_size(1000);
@@ -126,5 +127,10 @@ camera::Controller* Controller::camera_controller() const
 tile_scheduler::GpuCacheTileScheduler* Controller::tile_scheduler() const
 {
     return m_tile_scheduler.get();
+}
+
+nucleus::AbstractRenderWindow* Controller::render_window()const{
+
+    return m_render_window;
 }
 }

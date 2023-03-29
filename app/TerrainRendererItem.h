@@ -52,7 +52,7 @@ signals:
     //    void viewport_changed(const glm::uvec2& new_viewport) const;
     void position_set_by_user(double new_latitude, double new_longitude);
     void position_with_height_set_by_user(double new_latitude, double new_longitude, double new_height);
-
+    void process_image(const QImage&);
     void camera_changed();
     void camera_width_changed();
     void camera_height_changed();
@@ -69,6 +69,7 @@ protected:
 public slots:
     void set_position(double latitude, double longitude);
     void set_position(double latitude, double longitude, double height);
+    void load_image(QString path);
 
 private slots:
     void schedule_update();

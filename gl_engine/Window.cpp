@@ -52,6 +52,7 @@
 
 #include <QDebug>
 #include <QImage>
+#include <QImageWriter>
 #include <QMoveEvent>
 #include <QOpenGLBuffer>
 #include <QOpenGLContext>
@@ -224,8 +225,26 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
         fb[i]->bind_colour_texture_to_binding(0, i);
         f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
     }
-    m_shader_manager->panorama_program()->set_uniform("fov",90.0f);
+    m_shader_manager->panorama_program()->set_uniform("fov",55.0f);
     m_screen_quad_geometry.draw();
+    /*
+    std::unique_ptr<Framebuffer> big_framebuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
+    big_framebuffer->resize({4000,4000});
+    big_framebuffer->bind();
+    for(uint i = 0; i < 6; i++){
+        fb[i]->bind_colour_texture_to_binding(0, i);
+        f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
+    }
+    m_screen_quad_geometry.draw();
+    QString imagePath(QStringLiteral("image.jpeg"));
+    QImage image = big_framebuffer->read_colour_attachment(0);
+    {
+        QImageWriter writer(imagePath);
+        if(!writer.write(image))
+            qDebug() << writer.errorString();
+    }
+    big_framebuffer->unbind();
+    */
     m_shader_manager->release();
     f->glFinish(); // synchronization
     m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
@@ -326,6 +345,10 @@ void Window::remove_tile(const tile::Id& id)
     m_tile_manager->remove_tile(id);
 }
 
+void Window::process_image(const QImage& image){
+
+
+}
 nucleus::camera::AbstractDepthTester* Window::depth_tester()
 {
     return this;
