@@ -62,6 +62,7 @@ set(ALP_GL_SHADERS
     gl_shaders/depth.frag
     gl_shaders/panorama.frag
     gl_shaders/panorama.vert
+    gl_shaders/sobel.frag
 )
 set(ALP_PLAIN_RENDERER_SOURCES
     plain_renderer/main.cpp

@@ -1,4 +1,4 @@
-in highp vec2 texcoords;
+ in highp vec2 texcoords;
 uniform sampler2D texture_sampler0;
 uniform sampler2D texture_sampler1;
 uniform sampler2D texture_sampler2;

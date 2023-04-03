@@ -36,6 +36,7 @@ public:
     [[nodiscard]] ShaderProgram* atmosphere_bg_program() const;
     [[nodiscard]] ShaderProgram* depth_program() const;
     [[nodiscard]] ShaderProgram* panorama_program() const;
+    [[nodiscard]] ShaderProgram* sobel_program() const;
     void release();
 public slots:
     void reload_shaders();
@@ -49,5 +50,7 @@ private:
     std::unique_ptr<ShaderProgram> m_atmosphere_bg_program;
     std::unique_ptr<ShaderProgram> m_depth_program;
     std::unique_ptr<ShaderProgram> m_panorama_program;
+    std::unique_ptr<ShaderProgram> m_sobel_program;
+
 };
 }

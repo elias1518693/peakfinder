@@ -250,6 +250,26 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
     m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
 }
 
+void Window::process_image(const QImage& image){
+    image.toPixelFormat(QImage::Format_Grayscale8);
+    QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
+    std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
+    qDebug()<<framebuffer->size().x << framebuffer->size().y;
+    m_shader_manager->sobel_program()->bind();
+    framebuffer->bind();
+    framebuffer->bind_colour_texture(0);
+    //m_framebuffer->bind_colour_texture(0)
+    m_screen_quad_geometry.draw();
+    m_shader_manager->sobel_program()->release();
+    QString imagePath(QStringLiteral("image.jpeg"));
+    QImage out_image = framebuffer->read_colour_attachment(0);
+    {
+        QImageWriter writer(imagePath);
+        if(!writer.write(out_image))
+            qDebug() << writer.errorString();
+    }
+}
+
 void Window::paintOverGL(QPainter* painter)
 {
     const auto frame_duration = (m_frame_end - m_frame_start);
@@ -345,10 +365,7 @@ void Window::remove_tile(const tile::Id& id)
     m_tile_manager->remove_tile(id);
 }
 
-void Window::process_image(const QImage& image){
 
-
-}
 nucleus::camera::AbstractDepthTester* Window::depth_tester()
 {
     return this;
