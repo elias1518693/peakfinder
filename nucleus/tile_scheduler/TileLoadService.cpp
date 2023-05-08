@@ -22,7 +22,7 @@
 #include <QImage>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
-#include <QtVersionChecks>
+
 
 #include "../srs.h"
 

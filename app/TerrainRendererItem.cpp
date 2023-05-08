@@ -157,6 +157,12 @@ void TerrainRendererItem::set_position(double latitude, double longitude)
     RenderThreadNotifier::instance()->notify();
 }
 
+void TerrainRendererItem::set_position(double latitude, double longitude, double height)
+{
+    emit position_set_by_user(latitude, longitude);
+    RenderThreadNotifier::instance()->notify();
+}
+
 void TerrainRendererItem::rotate_north()
 {
     emit key_pressed(QKeyCombination(Qt::Key_C));
