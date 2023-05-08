@@ -1,6 +1,7 @@
 /*****************************************************************************
  * Alpine Terrain Renderer
  * Copyright (C) 2022 Adam Celarek
+ * Copyright (C) 2023 Jakob Lindner
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -81,8 +82,8 @@ private:
     float m_field_of_view = 0; // degrees
     float m_distance_scaling_factor = 0;
     float m_near_clipping = 1.0;
-    float m_far_clipping = 100'000;
-    glm::uvec2 m_viewport_size = { 800, 450 };
+    float m_far_clipping = 1'000'000;
+    glm::uvec2 m_viewport_size = { 480, 270 };
 };
 
 }

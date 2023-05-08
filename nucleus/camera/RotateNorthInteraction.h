@@ -1,6 +1,7 @@
 /*****************************************************************************
  * Alpine Terrain Renderer
  * Copyright (C) 2022 Adam Celarek
+ * Copyright (C) 2023 Jakob Lindner
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,46 +19,23 @@
 
 #pragma once
 
-#include <memory>
-#include <vector>
-
-#include <glm/glm.hpp>
-#include <QObject>
-
-#include "sherpa/tile.h"
-
-namespace nucleus {
-struct Tile;
-}
+#include "InteractionStyle.h"
+#include "nucleus/utils/Stopwatch.h"
 
 namespace nucleus::camera {
-class Definition;
-
-class NearPlaneAdjuster : public QObject
+class RotateNorthInteraction : public InteractionStyle
 {
-    Q_OBJECT
+    glm::dvec3 m_operation_centre = {};
+    utils::Stopwatch m_stopwatch = {};
+    float m_degrees_from_north = 0;
+    int m_total_duration = 1000;
+    int m_current_duration = 0;
 public:
-    explicit NearPlaneAdjuster(QObject *parent = nullptr);
-
-signals:
-    void near_plane_changed(float new_distance) const;
-
-public slots:
-    void update_camera(const Definition& new_definition);
-    void add_tile(const std::shared_ptr<nucleus::Tile>& tile);
-    void remove_tile(const tile::Id& tile_id);
-
+    void reset_interaction(Definition camera, AbstractDepthTester* depth_tester) override;
+    std::optional<Definition> update(Definition camera, AbstractDepthTester* depth_tester) override;
+    std::optional<glm::vec2> get_operation_centre() override;
 private:
-    void update_near_plane() const;
-
-    struct Object {
-        Object() = default;
-        Object(const tile::Id& id, const double& elevation) : id(id), elevation(elevation) {}
-        tile::Id id;
-        double elevation;
-    };
-    glm::dvec3 m_camera_position;
-    std::vector<Object> m_objects;
+    float ease_in_out(float t);
+    glm::vec2 m_operation_centre_screen = {};
 };
-
 }

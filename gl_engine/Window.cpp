@@ -1,52 +1,21 @@
-/****************************************************************************
-**
-** Copyright (C) 2016 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the examples of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:BSD$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** BSD License Usage
-** Alternatively, you may use this file under the terms of the BSD license
-** as follows:
-**
-** "Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are
-** met:
-**   * Redistributions of source code must retain the above copyright
-**     notice, this list of conditions and the following disclaimer.
-**   * Redistributions in binary form must reproduce the above copyright
-**     notice, this list of conditions and the following disclaimer in
-**     the documentation and/or other materials provided with the
-**     distribution.
-**   * Neither the name of The Qt Company Ltd nor the names of its
-**     contributors may be used to endorse or promote products derived
-**     from this software without specific prior written permission.
-**
-**
-** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-** "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+/*****************************************************************************
+ * Alpine Terrain Renderer
+ * Copyright (C) 2022 Adam Celarek
+ * Copyright (C) 2023 Jakob Lindner
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *****************************************************************************/
 
 #include <array>
 
@@ -76,6 +45,7 @@
 #include "TileManager.h"
 #include "Window.h"
 #include "helpers.h"
+#include "nucleus/utils/bit_coding.h"
 
 using gl_engine::Window;
 
@@ -111,6 +81,7 @@ void Window::initialise_gpu()
     m_screen_quad_geometry = gl_engine::helpers::create_screen_quad_geometry();
     m_framebuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
     m_depth_buffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
+    emit gpu_ready_changed(true);
 }
 
 void Window::resize_framebuffer(int width, int height)
@@ -148,13 +119,6 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     f->glClearColor(1.0, 0.0, 0.5, 1);
 
     f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-    f->glEnable(GL_DEPTH_TEST);
-    f->glDepthFunc(GL_LESS);
-////    glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-
-    m_shader_manager->tile_shader()->bind();
-
-    m_tile_manager->draw(m_shader_manager->tile_shader(), m_camera);
 
     //    {
     //        m_shader_manager->bindDebugShader();
@@ -170,6 +134,13 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     m_shader_manager->atmosphere_bg_program()->bind();
     m_atmosphere->draw(m_shader_manager->atmosphere_bg_program(), m_camera, m_shader_manager->screen_quad_program(), m_framebuffer.get());
 
+    f->glEnable(GL_DEPTH_TEST);
+    f->glDepthFunc(GL_LESS);
+    f->glEnable(GL_BLEND);
+    f->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    m_shader_manager->tile_shader()->bind();
+    m_tile_manager->draw(m_shader_manager->tile_shader(), m_camera);
+
     m_framebuffer->unbind();
     if (framebuffer)
         framebuffer->bind();
@@ -180,7 +151,6 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
 
     m_shader_manager->release();
 
-//        glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
     f->glFinish(); // synchronization
     m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
 }
@@ -305,6 +275,16 @@ void Window::keyPressEvent(QKeyEvent* e)
     emit key_pressed(e->keyCombination());
 }
 
+void Window::keyReleaseEvent(QKeyEvent* e)
+{
+    emit key_released(e->keyCombination());
+}
+
+void Window::updateCameraEvent()
+{
+    emit update_camera_requested();
+}
+
 void Window::set_permissible_screen_space_error(float new_error)
 {
     if (m_tile_manager)
@@ -324,9 +304,15 @@ void Window::update_debug_scheduler_stats(const QString& stats)
     emit update_requested();
 }
 
+void Window::update_gpu_quads(const std::vector<nucleus::tile_scheduler::tile_types::GpuTileQuad>& new_quads, const std::vector<tile::Id>& deleted_quads)
+{
+    assert(m_tile_manager);
+    m_tile_manager->update_gpu_quads(new_quads, deleted_quads);
+}
+
 float Window::depth(const glm::dvec2& normalised_device_coordinates)
 {
-    const auto read_float = float(m_depth_buffer->read_colour_attachment_pixel(0, normalised_device_coordinates)[0]) / 255.f;
+    const auto read_float = nucleus::utils::bit_coding::to_f16f16(m_depth_buffer->read_colour_attachment_pixel(0, normalised_device_coordinates))[0];
     const auto depth = std::exp(read_float * 13.f);
     return depth;
 }
@@ -338,6 +324,7 @@ glm::dvec3 Window::position(const glm::dvec2& normalised_device_coordinates)
 
 void Window::deinit_gpu()
 {
+    emit gpu_ready_changed(false);
     m_tile_manager.reset();
     m_debug_painter.reset();
     m_atmosphere.reset();
@@ -347,7 +334,7 @@ void Window::deinit_gpu()
     m_screen_quad_geometry = {};
 }
 
-void Window::set_aabb_decorator(const nucleus::tile_scheduler::AabbDecoratorPtr& new_aabb_decorator)
+void Window::set_aabb_decorator(const nucleus::tile_scheduler::utils::AabbDecoratorPtr& new_aabb_decorator)
 {
     assert(m_tile_manager);
     m_tile_manager->set_aabb_decorator(new_aabb_decorator);

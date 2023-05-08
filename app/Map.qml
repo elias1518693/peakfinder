@@ -36,13 +36,14 @@ Rectangle {
     }
 
     Image {
-        id: camera_operation_center
-        source: "qrc:/alpinemaps/app/icons/camera_operation_center.svg"
+        id: camera_operation_centre
+        source: "qrc:/icons/camera_operation_centre.svg"
         width: 16
         height: 16
         sourceSize: Qt.size(width, height)
-        x: renderer.camera_operation_center.x - width / 2
-        y: renderer.camera_operation_center.y - 60 - height / 2
+        x: renderer.camera_operation_centre.x - width / 2
+        y: renderer.camera_operation_centre.y - 60 - height / 2
+        visible: renderer.camera_operation_centre_visibility && punkt.checked
     }
 
     Repeater {
@@ -67,7 +68,7 @@ Rectangle {
             z:  50 * my_scale()
             Image {
                 id: icon
-                source: "qrc:/alpinemaps/app/icons/peak.svg"
+                source: "qrc:/icons/peak.svg"
                 width: 16 * my_scale()
                 height: 16 * my_scale()
                 sourceSize: Qt.size(width, height)
@@ -124,12 +125,49 @@ Rectangle {
     }
 
     RoundButton {
+        id: punkt
+        width: 60
+        height: 60
+        checkable: true
+        checked: true
+        focusPolicy: Qt.NoFocus
+        text: "punkt"
+        visible: false
+        anchors {
+            right: parent.right
+            bottom: compass.top
+            rightMargin: 10
+            bottomMargin: 10
+        }
+    }
+    RoundButton {
+        id: compass
+        width: 60
+        height: 60
+        rotation: renderer.camera_rotation_from_north
+        onClicked: renderer.rotate_north()
+        focusPolicy: Qt.NoFocus
+        icon {
+            source: "qrc:/icons/compass.svg"
+            height: 40
+            width: 40
+        }
+        anchors {
+            right: parent.right
+            bottom: current_location.top
+            rightMargin: 10
+            bottomMargin: 10
+        }
+    }
+
+    RoundButton {
         id: current_location
         width: 60
         height: 60
         checkable: true
+        focusPolicy: Qt.NoFocus
         icon {
-            source: "qrc:/alpinemaps/app/icons/current_location.svg"
+            source: "qrc:/icons/current_location.svg"
             height: 32
             width: 32
         }

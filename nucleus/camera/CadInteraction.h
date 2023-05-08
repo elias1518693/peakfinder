@@ -1,6 +1,7 @@
 /*****************************************************************************
  * Alpine Terrain Renderer
  * Copyright (C) 2022 Adam Celarek
+ * Copyright (C) 2023 Jakob Lindner
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +20,7 @@
 #pragma once
 
 #include "InteractionStyle.h"
+#include "nucleus/utils/Stopwatch.h"
 
 namespace nucleus::camera {
 class CadInteraction : public InteractionStyle
@@ -26,12 +28,19 @@ class CadInteraction : public InteractionStyle
     glm::ivec2 m_previous_mouse_pos = { -1, -1 };
     glm::ivec2 m_previous_first_touch = { -1, -1 };
     glm::ivec2 m_previous_second_touch = { -1, -1 };
-    bool m_was_double_touch = false;
     glm::dvec3 m_operation_centre = {};
+    glm::vec2 m_operation_centre_screen = {};
+    utils::Stopwatch m_stopwatch = {};
+    bool m_was_double_touch = false;
+    bool m_key_ctrl = false;
+    bool m_key_alt = false;
 public:
+    void reset_interaction(Definition camera, AbstractDepthTester* depth_tester) override;
     std::optional<Definition> mouse_press_event(const event_parameter::Mouse& e, Definition camera, AbstractDepthTester* depth_tester) override;
     std::optional<Definition> mouse_move_event(const event_parameter::Mouse& e, Definition camera, AbstractDepthTester* depth_tester) override;
-    std::optional<Definition> touch_event(const event_parameter::Touch& e, Definition camera, AbstractDepthTester* depth_tester) override;
     std::optional<Definition> wheel_event(const event_parameter::Wheel& e, Definition camera, AbstractDepthTester* depth_tester) override;
+    std::optional<Definition> key_press_event(const QKeyCombination& e, Definition camera, AbstractDepthTester* depth_tester) override;
+    std::optional<Definition> key_release_event(const QKeyCombination& e, Definition camera, AbstractDepthTester* depth_tester) override;
+    std::optional<glm::vec2> get_operation_centre() override;
 };
 }
