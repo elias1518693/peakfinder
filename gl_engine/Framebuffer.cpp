@@ -145,6 +145,24 @@ Framebuffer::Framebuffer(DepthFormat depth_format, std::vector<ColourFormat> col
     reset_fbo();
 }
 
+Framebuffer::Framebuffer(QImage image, DepthFormat depth_format)    : m_depth_format(depth_format),
+    m_colour_formats(std::move(image.format())),
+    m_size(image.size().width(), image.size().height()){
+    m_colour_texture = std::make_unique<QOpenGLTexture>(image, QOpenGLTexture::DontGenerateMipMaps);
+    m_colour_texture->setMinMagFilters(QOpenGLTexture::Filter::Nearest, QOpenGLTexture::Filter::Nearest);
+    m_colour_texture->setWrapMode(QOpenGLTexture::WrapMode::ClampToEdge);
+    if (m_depth_format != DepthFormat::None) {
+        m_depth_texture = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target::Target2D);
+        m_depth_texture->setFormat(internal_format_qt(m_depth_format));
+        m_depth_texture->setSize(int(m_size.x), int(m_size.y));
+        m_depth_texture->allocateStorage();
+    }
+    QOpenGLFunctions* f = QOpenGLContext::currentContext()->functions();
+    f->glBindTexture(GL_TEXTURE_2D, 0);
+    f->glGenFramebuffers(1, &m_frame_buffer);
+    reset_fbo();
+}
+
 Framebuffer::~Framebuffer()
 {
     QOpenGLFunctions* f = QOpenGLContext::currentContext()->functions();

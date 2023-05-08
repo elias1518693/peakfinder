@@ -50,12 +50,16 @@ ShaderManager::ShaderManager()
     m_atmosphere_bg_program = std::make_unique<ShaderProgram>(
         ShaderProgram::Files({"gl_shaders/screen_pass.vert"}),
         ShaderProgram::Files({"gl_shaders/atmosphere_implementation.frag", "gl_shaders/atmosphere_bg.frag"}));
-    m_depth_program = std::make_unique<ShaderProgram>(
-        ShaderProgram::Files({"gl_shaders/tile.vert"}),
-        ShaderProgram::Files({"gl_shaders/depth.frag"}));
+    m_depth_program
+        = std::make_unique<ShaderProgram>(ShaderProgram::Files({"gl_shaders/tile.vert"}),
+                                          ShaderProgram::Files({"gl_shaders/encoder.glsl",
+                                                                "gl_shaders/depth.frag"}));
     m_panorama_program = std::make_unique<ShaderProgram>(
                 ShaderProgram::Files({"gl_shaders/panorama.vert"}),
                 ShaderProgram::Files({"gl_shaders/panorama.frag"}));
+    m_sobel_program = std::make_unique<ShaderProgram>(
+                ShaderProgram::Files({"gl_shaders/screen_pass.vert"}),
+                ShaderProgram::Files({"gl_shaders/sobel.frag"}));
 
     m_program_list.push_back(m_tile_program.get());
     m_program_list.push_back(m_debug_program.get());
@@ -63,6 +67,7 @@ ShaderManager::ShaderManager()
     m_program_list.push_back(m_atmosphere_bg_program.get());
     m_program_list.push_back(m_depth_program.get());
     m_program_list.push_back(m_panorama_program.get());
+    m_program_list.push_back(m_sobel_program.get());
 }
 
 ShaderManager::~ShaderManager() = default;
@@ -96,6 +101,12 @@ ShaderProgram* ShaderManager::panorama_program() const
 {
     return m_panorama_program.get();
 }
+
+ShaderProgram* ShaderManager::sobel_program() const
+{
+    return m_sobel_program.get();
+}
+
 
 void ShaderManager::release()
 {

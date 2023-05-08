@@ -56,6 +56,7 @@ private:
 
 public:
     Framebuffer(DepthFormat depth_format, std::vector<ColourFormat> colour_formats);
+    Framebuffer(QImage image, DepthFormat depth_format);
     ~Framebuffer();
     void resize(const glm::uvec2& new_size);
     void bind();
