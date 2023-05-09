@@ -221,12 +221,15 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
 }
 
 void Window::process_image(const QImage& image){
-    image.toPixelFormat(QImage::Format_Grayscale8);
+    QImage greyscale = image.convertToFormat(QImage::Format_Grayscale8);
     QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
-    std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
+    std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(greyscale, Framebuffer::DepthFormat::None);
     qDebug()<<framebuffer->size().x << framebuffer->size().y;
     m_shader_manager->sobel_program()->bind();
+
     framebuffer->bind();
+    f->glDisable(GL_DEPTH_TEST);
+    f->glDisable(GL_BLEND);
     framebuffer->bind_colour_texture(0);
     //m_framebuffer->bind_colour_texture(0)
     m_screen_quad_geometry.draw();

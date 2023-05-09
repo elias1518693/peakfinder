@@ -30,8 +30,8 @@ void main()
                + kernel[2] * edgeColors[2] + kernel[5] * edgeColors[5] + kernel[8] * edgeColors[8];
 
     float edgeMagnitude = length(vec2(length(edgeX), length(edgeY)));
-    //if(edgeMagnitude < 2){
-    //    edgeMagnitude = 0;
-    //}
+    if(edgeMagnitude < 1.5){
+        edgeMagnitude = 0;
+    }
     fragColor = vec4(vec3(edgeMagnitude), 1.0);
 }
