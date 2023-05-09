@@ -127,6 +127,7 @@ Window {
             model: ListModel {
                 ListElement { title: qsTr("Map"); source: "map" }
                 ListElement { title: qsTr("Coordinates"); source: "qrc:/app/Coordinates.qml" }
+                ListElement { title: qsTr("Peakfinder"); source: "qrc:/app/Peakfinder.qml" }
 //                ListElement { title: qsTr("Cached Content"); source: "" }
                 ListElement { title: qsTr("Settings"); source: "qrc:/app/Settings.qml" }
                 ListElement { title: qsTr("About"); source: "qrc:/app/About.qml" }

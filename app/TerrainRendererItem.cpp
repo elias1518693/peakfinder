@@ -159,7 +159,7 @@ void TerrainRendererItem::set_position(double latitude, double longitude)
 
 void TerrainRendererItem::set_position(double latitude, double longitude, double height)
 {
-    emit position_set_by_user(latitude, longitude);
+    emit position_with_height_set_by_user(latitude, longitude, height);
     RenderThreadNotifier::instance()->notify();
 }
 

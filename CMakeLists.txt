@@ -18,7 +18,7 @@ if (NOT EMSCRIPTEN)
 endif()
 
 if (UNIX AND NOT EMSCRIPTEN AND NOT ANDROID)
-    option(ALP_USE_LLVM_LINKER "use lld (llvm) for linking. it's parallel and much faster, but not installed by default.
+    option(ALP_USE_LLVM_LINKER "use lld (llvm) ffor linking. it's parallel and much faster, but not installed by default.
         if it's not installed, you'll get errors, that openmp or other stuff is not installed (hard to track down)" OFF)
 endif()
 
@@ -104,6 +104,7 @@ set(ALP_APP_QML
     app/SearchResults.qml
     app/Settings.qml
     app/Coordinates.qml
+    app/Peakfinder.qml
 )
 set(ALP_APP_ICONS
     app/icons/camera_operation_centre.svg
