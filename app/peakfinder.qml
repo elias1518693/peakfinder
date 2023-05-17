@@ -25,14 +25,6 @@ Rectangle {
     id: root
     color: "#00FFFFFF"
 
-    GnssInformation {
-        id: gnss
-        enabled: true
-        onInformation_updated: {
-
-        }
-    }
-
     Rectangle {
         anchors {
             centerIn: root
