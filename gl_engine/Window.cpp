@@ -292,10 +292,45 @@ QImage mat_to_qimage(cv::Mat const& mat)
     return qImage;
 }
 
-cv::Mat qimage_to_mat(QImage image){
+cv::Mat QImageToMat(const QImage& image)
+{
+    // Convert QImage to QPixmap
+    QPixmap pixmap = QPixmap::fromImage(image);
 
-   return cv::Mat(image.height(), image.width(), CV_8UC4, (void*) image.constBits(), image.bytesPerLine());
- }
+    // Convert QPixmap to cv::Mat
+    cv::Mat mat;
+    cv::Mat alpha;
+
+    // QImage format conversion to support different pixel formats
+
+    switch (image.format())
+    {
+        case QImage::Format_ARGB32:
+        case QImage::Format_ARGB32_Premultiplied:
+            mat = cv::Mat(image.height(), image.width(), CV_8UC4, (void*) image.bits(), image.bytesPerLine());
+            break;
+        case QImage::Format_RGB32:
+            mat = cv::Mat(image.height(), image.width(), CV_8UC4, (void*) image.bits(), image.bytesPerLine());
+            cv::cvtColor(mat, mat, cv::COLOR_BGRA2RGBA);
+            break;
+        case QImage::Format_RGB888:
+            mat = cv::Mat(image.height(), image.width(), CV_8UC3, (void*) image.bits(), image.bytesPerLine());
+            cv::cvtColor(mat, mat, cv::COLOR_BGR2RGB);
+            break;
+        case QImage::Format_RGBA8888:
+        mat = cv::Mat(image.height(), image.width(), CV_8UC4, (void*) image.bits(), image.bytesPerLine());
+        cv::cvtColor(mat, mat, cv::COLOR_BGRA2RGBA);
+        break;
+        case QImage::Format_Grayscale8:
+            mat = cv::Mat(image.height(), image.width(), CV_8UC1, (void*) image.bits(), image.bytesPerLine());
+            break;
+        default:
+            // Unsupported image format
+            throw std::runtime_error("Unsupported image format");
+    }
+
+    return mat.clone();  // Return a cloned copy of the converted cv::Mat
+}
 void detectAndMatchSIFTFeatures(const QImage& image1, const QImage& image2, std::vector<std::vector<cv::DMatch>>& matches)
 {
     cv::Mat mat1 = cv::Mat(image1.height(), image1.width(), CV_8UC4, (void*) image1.constBits(), image1.bytesPerLine());
@@ -397,6 +432,7 @@ void detectAndMatchORBFeatures(const QImage& image1, const QImage& image2, std::
     */
     // Draw matches between the images
         cv::Mat matchedImage;
+
         cv::drawMatches(mat1, keypoints1, mat2, keypoints2, matches, matchedImage);
 
         // Convert the matched image back to QImage and display it
@@ -417,9 +453,9 @@ void Window::process_image(const QImage& image){
     //QImage greyscale = image.convertToFormat(QImage::Format_Grayscale8);
     QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
     cv::Mat debugImage;
-
+    cv::Mat outputImage = QImageToMat(m_framebuffer->read_colour_attachment(0));
     //SOBEL FILTER INPUT IMAGE
-    /*
+
     std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
     qDebug()<<framebuffer->size().x << framebuffer->size().y;
     m_shader_manager->sobel_program()->bind();
@@ -428,38 +464,30 @@ void Window::process_image(const QImage& image){
     f->glDisable(GL_BLEND);
     framebuffer->bind_colour_texture(0);
     m_screen_quad_geometry.draw();
-*/
+    qDebug()<<framebuffer->read_colour_attachment(0);
     //input = keepFirstNonZeroPixels(input);
-    cv::Mat image_real = qimage_to_mat(image);
-    cv::Mat gray;
-    cv::cvtColor(image_real, gray, cv::COLOR_BGR2GRAY);
-    cv::Sobel(gray,gray, CV_32F, 1, 0);
-    cv::Sobel(gray,gray, CV_32F, 0, 1);
-
+    cv::Mat image_real;
+    QImageToMat(framebuffer->read_colour_attachment(0)).convertTo(image_real, CV_32FC4);
+    qDebug()<< image_real.at<float>(5,5);
+    cv::resize(image_real,debugImage, cv::Size(960, 540));
+    cv::imshow("input real",debugImage);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
 
     //SOBEL FILTER PANORAMA IMAGE
-    /*
     m_framebuffer->bind();
     f->glDisable(GL_DEPTH_TEST);
     f->glDisable(GL_BLEND);
     m_framebuffer->bind_colour_texture(0);
     m_screen_quad_geometry.draw();
     m_shader_manager->sobel_program()->release();
-*/
+
     cv::Mat panorama;
-    qimage_to_mat(m_framebuffer->read_colour_attachment(0)).convertTo(panorama, CV_32FC4,  1.0/255.0);
+    QImageToMat(m_framebuffer->read_colour_attachment(0)).convertTo(panorama, CV_32FC4);
 
     cv::Mat out_mat;
     int w = panorama.cols;
     int h = panorama.rows;
-    cv::Mat matching_image;
-    image_real.convertTo(matching_image, CV_32FC4, 1.0/255.0);
-
-    //debug images
-    cv::resize(image_real,debugImage, cv::Size(960, 540));
-    cv::imshow("input real",debugImage);
-    cv::waitKey(0);
-    cv::destroyAllWindows();
 
     cv::resize(panorama,debugImage, cv::Size(960, 540));
     cv::imshow("input panroama",debugImage);
@@ -467,7 +495,7 @@ void Window::process_image(const QImage& image){
     cv::destroyAllWindows();
 
     //template matching
-    cv::matchTemplate(matching_image,panorama,out_mat,cv::TM_CCORR);
+    cv::matchTemplate(panorama,image_real,out_mat,cv::TM_CCORR);
     double minVal = 0;
     double maxVal = 0;
     cv::Point minLoc, maxLoc;
@@ -475,9 +503,9 @@ void Window::process_image(const QImage& image){
 
     //Draw rectangle
     cv::Point bottomRight(maxLoc.x + w, maxLoc.y + h);
-    cv::rectangle(image_real, maxLoc, bottomRight, cv::Scalar(255, 255, 255), 5);
-    cv::resize(image_real,image_real, cv::Size(960, 540));
-    cv::imshow("matched",image_real);
+    cv::rectangle(outputImage, maxLoc, bottomRight, cv::Scalar(255, 255, 255), 5);
+    cv::resize(outputImage,outputImage, cv::Size(960, 540));
+    cv::imshow("matched",outputImage);
     cv::waitKey(0);
     cv::destroyAllWindows();
 
