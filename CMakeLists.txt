@@ -202,9 +202,12 @@ target_include_directories(zppbits INTERFACE ${zppbits_SOURCE_DIR})
 qt_add_library(nucleus STATIC
     ${ALP_NUCLEUS_SOURCES}
 )
+set(OpenCV_DIR "E:/opencv/OpenCV-MinGW-Build")
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 target_include_directories(nucleus PRIVATE . PUBLIC ${CMAKE_SOURCE_DIR})
-target_link_libraries(nucleus PUBLIC sherpa Qt::Core Qt::Gui Qt6::Network Qt6::Svg fmt::fmt zppbits)
+target_link_libraries(nucleus PUBLIC sherpa Qt::Core Qt::Gui Qt6::Network Qt6::Svg fmt::fmt zppbits ${OpenCV_LIBS})
 
 
 if (ALP_ENABLE_ASSERTS)

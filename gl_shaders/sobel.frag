@@ -4,34 +4,38 @@ out vec4 fragColor;
 uniform sampler2D inputTexture;
 
 
-void main()
+void make_kernel(inout float n[9], sampler2D tex, vec2 coord)
 {
-    vec2 textureSize = textureSize(inputTexture, 0);
-    vec2 texelSize = 1.0 / textureSize;
+        vec2 texSize = textureSize(tex, 0);
+        float w = 1.0 / texSize.x;
+        float h = 1.0 / texSize.y;
+        coord += vec2(w,h);
 
-    // Sobel filter kernel
-    float kernel[9] = float[9](-1, 0, 1,
-                                -2, 0, 2,
-                                -1, 0, 1);
+        n[0] = dot(texture2D(tex, coord + vec2( -w, -h)).xyz, vec3(0.299, 0.587, 0.114));
+        n[1] = dot(texture2D(tex, coord + vec2(0.0, -h)).xyz, vec3(0.299, 0.587, 0.114));
+        n[2] = dot(texture2D(tex, coord + vec2(  w, -h)).xyz, vec3(0.299, 0.587, 0.114));
+        n[3] = dot(texture2D(tex, coord + vec2( -w, 0.0)).xyz, vec3(0.299, 0.587, 0.114));
+        n[4] = dot(texture2D(tex, coord).xyz, vec3(0.299, 0.587, 0.114));
+        n[5] = dot(texture2D(tex, coord + vec2(  w, 0.0)).xyz, vec3(0.299, 0.587, 0.114));
+        n[6] = dot(texture2D(tex, coord + vec2( -w, h)).xyz, vec3(0.299, 0.587, 0.114));
+        n[7] = dot(texture2D(tex, coord + vec2(0.0, h)).xyz, vec3(0.299, 0.587, 0.114));
+        n[8] = dot(texture2D(tex, coord + vec2(  w, h)).xyz, vec3(0.299, 0.587, 0.114));
+}
 
-    vec3 edgeColors[9];
+void main(void)
+{
+        float n[9];
+        make_kernel( n, inputTexture, texcoords);
 
-    for (int i = 0; i < 9; i++) {
-        vec2 offset = texelSize * vec2(i % 3 - 1, i / 3.0f - 1.0f) + vec2(texelSize);
-        edgeColors[i] = textureLod(inputTexture, texcoords + offset, 0.0).rgb;
-    }
+        float sobel_edge_h = n[2] + (2.0*n[5]) + n[8] - (n[0] + (2.0*n[3]) + n[6]);
+        float sobel_edge_v = n[0] + (2.0*n[1]) + n[2] - (n[6] + (2.0*n[7]) + n[8]);
+        float sobel = sqrt((sobel_edge_h * sobel_edge_h) + (sobel_edge_v * sobel_edge_v));
+        float direction = atan(sobel_edge_h, sobel_edge_v)/3.1415926538;
+        direction = (direction+1)/2.0f;
+        if(sobel < 0.66){
 
-    vec3 edgeX = kernel[0] * edgeColors[0] + kernel[1] * edgeColors[1] + kernel[2] * edgeColors[2]
-               + kernel[3] * edgeColors[3] + kernel[4] * edgeColors[4] + kernel[5] * edgeColors[5]
-               + kernel[6] * edgeColors[6] + kernel[7] * edgeColors[7] + kernel[8] * edgeColors[8];
-
-    vec3 edgeY = kernel[0] * edgeColors[0] + kernel[3] * edgeColors[3] + kernel[6] * edgeColors[6]
-               + kernel[1] * edgeColors[1] + kernel[4] * edgeColors[4] + kernel[7] * edgeColors[7]
-               + kernel[2] * edgeColors[2] + kernel[5] * edgeColors[5] + kernel[8] * edgeColors[8];
-
-    float edgeMagnitude = length(vec2(length(edgeX), length(edgeY)));
-    if(edgeMagnitude < 1.5){
-        edgeMagnitude = 0;
-    }
-    fragColor = vec4(vec3(edgeMagnitude), 1.0);
+            sobel = 0;
+        }
+        fragColor = vec4(vec3(sobel, direction, 0) , 1.0 );
+        //fragColor = vec4( sobel.rgb * (1.0-texcoords.y), 1.0 );
 }
