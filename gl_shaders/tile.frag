@@ -37,5 +37,5 @@ void main() {
    highp vec3 light_through_atmosphere = calculate_atmospheric_light(camera_position / 1000.0, ray_direction, dist / 1000.0, vec3(ortho), 10);
    highp float cos_f = dot(ray_direction, vec3(0.0, 0.0, 1.0));
    highp float alpha = calculate_falloff(dist, 300000.0, 600000.0);//mix(, calculate_falloff(dist, 600000, 900000), 1-cos_f);
-   out_Color = vec4(light_through_atmosphere * alpha, alpha);
+   out_Color = vec4(light_through_atmosphere * log(dist)/13.0, alpha);
 }

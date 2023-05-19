@@ -58,8 +58,8 @@ ShaderManager::ShaderManager()
                 ShaderProgram::Files({"gl_shaders/panorama.vert"}),
                 ShaderProgram::Files({"gl_shaders/panorama.frag"}));
     m_sobel_program = std::make_unique<ShaderProgram>(
-                ShaderProgram::Files({"gl_shaders/screen_pass.vert"}),
-                ShaderProgram::Files({"gl_shaders/sobel.frag"}));
+                ShaderProgram::Files({"gl_shaders/panorama.vert"}),
+                ShaderProgram::Files({"gl_shaders/cylinder.frag"}));
 
     m_program_list.push_back(m_tile_program.get());
     m_program_list.push_back(m_debug_program.get());

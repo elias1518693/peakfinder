@@ -1,5 +1,7 @@
 // https://stackoverflow.com/a/59739538
 out highp vec2 texcoords;
+
+
 void main() {
     vec2 vertices[3]=vec2[3](vec2(-3.0, -1.0),
                              vec2(3.0, -1.0),

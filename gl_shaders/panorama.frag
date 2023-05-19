@@ -17,10 +17,12 @@ vec2 cubeMapTo2D(in vec3 cubeVec) {
 
     if (absX >= absY && absX >= absZ) { // X is the biggest
         if (cubeVec.x > 0.0) {
+            //rechts
             x = -cubeVec.z/absX;
             y = -cubeVec.y/absX;
         }
         else {
+            //links
             x = cubeVec.z/absX;
             y = -cubeVec.y/absX;
         }
@@ -28,10 +30,12 @@ vec2 cubeMapTo2D(in vec3 cubeVec) {
     }
     else if (absY >= absX && absY >= absZ) { // Y is the biggest
         if (cubeVec.y > 0.0) {
+            //mitte
             x = cubeVec.x/absY;
             y = cubeVec.z/absY;
         }
         else {
+            //rand
             x = cubeVec.x/absY;
             y = -cubeVec.z/absY;
         }
@@ -39,10 +43,12 @@ vec2 cubeMapTo2D(in vec3 cubeVec) {
     }
     else { // Z is the biggest
         if (cubeVec.z > 0.0) {
+            //oben
             x = cubeVec.x/absZ;
             y = -cubeVec.y/absZ;
         }
         else {
+            //unten
             x = -cubeVec.x/absZ;
             y = -cubeVec.y/absZ;
         }
@@ -63,14 +69,17 @@ sampler2D getSampler(in vec3 cubeVec) {
 
     if (absX >= absY && absX >= absZ) { // X is the biggest
         if (cubeVec.x > 0.0) {
+
             return texture_sampler0;
         }
         else {
+            //links
             return texture_sampler1;
         }
     }
     else if (absY >= absX && absY >= absZ) { // Y is the biggest
         if (cubeVec.y > 0.0) {
+            //
             return texture_sampler2;
         }
         else {
@@ -97,7 +106,7 @@ vec4 debugColor(in vec3 cubeVec) {
             return vec4(1,0,0,1);
         }
         else {
-            return vec4(1,0,0,1);
+            return vec4(0.5,0,0,1);
         }
     }
     else if (absY >= absX && absY >= absZ) { // Y is the biggest
@@ -105,7 +114,7 @@ vec4 debugColor(in vec3 cubeVec) {
             return vec4(0,1,0,1);
         }
         else {
-            return vec4(0,1,0,1);
+            return vec4(0,0.5,0,1);
         }
     }
     else { // Z is the biggest
@@ -113,7 +122,7 @@ vec4 debugColor(in vec3 cubeVec) {
             return vec4(0,0,1,1);
         }
         else {
-            return vec4(0,0,1,1);
+            return vec4(0,0,0.5,1);
         }
     }
 }
@@ -128,6 +137,6 @@ void main() {
     float z = texcoords.y * radians(fov);
 
 
-    out_Color = texture(getSampler(vec3(x,y,z)), cubeMapTo2D(normalize(vec3(x,y,z))));
+    out_Color = texture(getSampler(vec3(x,y,z)), cubeMapTo2D(vec3(x,y,z)));
     //out_Color = debugColor(normalize(vec3(x,y,z)));
 }

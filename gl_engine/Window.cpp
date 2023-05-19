@@ -190,7 +190,7 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
         fb[i]->bind_colour_texture_to_binding(0, i);
         f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
     }
-    m_shader_manager->panorama_program()->set_uniform("fov",40.0f);
+    m_shader_manager->panorama_program()->set_uniform("fov",70.0f);
     m_screen_quad_geometry.draw();
     /*
         std::unique_ptr<Framebuffer> big_framebuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
@@ -212,6 +212,7 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
         captureFrame = false;
     */
     m_shader_manager->release();
+    current_image = framebuffer->toImage();
     f->glFinish(); // synchronization
     m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
 }
@@ -453,49 +454,57 @@ void Window::process_image(const QImage& image){
     //QImage greyscale = image.convertToFormat(QImage::Format_Grayscale8);
     QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
     cv::Mat debugImage;
-    cv::Mat outputImage = QImageToMat(m_framebuffer->read_colour_attachment(0));
-    //SOBEL FILTER INPUT IMAGE
 
     std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
+    framebuffer->resize(m_framebuffer->size());
+     std::unique_ptr<Framebuffer> framebuffer_out = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
     qDebug()<<framebuffer->size().x << framebuffer->size().y;
-    m_shader_manager->sobel_program()->bind();
-    framebuffer->bind();
-    f->glDisable(GL_DEPTH_TEST);
-    f->glDisable(GL_BLEND);
-    framebuffer->bind_colour_texture(0);
-    m_screen_quad_geometry.draw();
-    qDebug()<<framebuffer->read_colour_attachment(0);
-    //input = keepFirstNonZeroPixels(input);
-    cv::Mat image_real;
-    QImageToMat(framebuffer->read_colour_attachment(0)).convertTo(image_real, CV_32FC4);
-    qDebug()<< image_real.at<float>(5,5);
+        m_shader_manager->sobel_program()->bind();
+        framebuffer->bind();
+        f->glClearColor(0.0, 0.0, 0.0, 1);
+
+        f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        f->glDisable(GL_DEPTH_TEST);
+        f->glDisable(GL_BLEND);
+        framebuffer_out->bind_colour_texture(0);
+        m_screen_quad_geometry.draw();
+    QImage input = framebuffer->read_colour_attachment(0);
+
+    cv::Mat image_real = QImageToMat(input);
+    cv::cvtColor(image_real, image_real, cv::COLOR_BGR2GRAY);
+    image_real.convertTo(image_real,CV_32F, 1.0/255.0);
+     //cv::GaussianBlur(image_real, image_real, cv::Size(3, 3), 0, 0, cv::BORDER_DEFAULT);
+    cv::Mat sX, sY, mag1, phase;
+    cv::Sobel(image_real, sX, CV_32F, 1, 0);
+    cv::Sobel(image_real, sY, CV_32F, 0, 1);
+    cv::magnitude(sX, sY, mag1);
+    cv::phase(sX, sY, phase, true);
+
     cv::resize(image_real,debugImage, cv::Size(960, 540));
     cv::imshow("input real",debugImage);
     cv::waitKey(0);
     cv::destroyAllWindows();
-
-    //SOBEL FILTER PANORAMA IMAGE
-    m_framebuffer->bind();
-    f->glDisable(GL_DEPTH_TEST);
-    f->glDisable(GL_BLEND);
-    m_framebuffer->bind_colour_texture(0);
-    m_screen_quad_geometry.draw();
-    m_shader_manager->sobel_program()->release();
-
-    cv::Mat panorama;
-    QImageToMat(m_framebuffer->read_colour_attachment(0)).convertTo(panorama, CV_32FC4);
-
+    cv::Mat panorama = QImageToMat(current_image);
+    //cv::Mat panorama = QImageToMat(current_image);
+    cv::cvtColor(panorama, panorama, cv::COLOR_BGR2GRAY);
+    panorama.convertTo(panorama,CV_32F, 1.0/255.0);
+    //cv::GaussianBlur(panorama, panorama, cv::Size(3, 3), 0, 0, cv::BORDER_DEFAULT);
+    cv::Mat sX2, sY2, mag2, phase2;
+    cv::Sobel(panorama, sX2, CV_32F, 1, 0);
+    cv::Sobel(panorama, sY2, CV_32F, 0, 1);
+    cv::magnitude(sX2, sY2, mag2);
+    cv::phase(sX2, sY2, phase2, true);
     cv::Mat out_mat;
-    int w = panorama.cols;
-    int h = panorama.rows;
+    int w = image_real.cols;
+    int h = image_real.rows;
 
-    cv::resize(panorama,debugImage, cv::Size(960, 540));
+    cv::resize(mag2,debugImage, cv::Size(960, 540));
     cv::imshow("input panroama",debugImage);
     cv::waitKey(0);
     cv::destroyAllWindows();
 
     //template matching
-    cv::matchTemplate(panorama,image_real,out_mat,cv::TM_CCORR);
+    cv::matchTemplate(phase2.mul(mag2),phase.mul(mag1),out_mat,cv::TM_CCORR);
     double minVal = 0;
     double maxVal = 0;
     cv::Point minLoc, maxLoc;
@@ -503,9 +512,9 @@ void Window::process_image(const QImage& image){
 
     //Draw rectangle
     cv::Point bottomRight(maxLoc.x + w, maxLoc.y + h);
-    cv::rectangle(outputImage, maxLoc, bottomRight, cv::Scalar(255, 255, 255), 5);
-    cv::resize(outputImage,outputImage, cv::Size(960, 540));
-    cv::imshow("matched",outputImage);
+    cv::rectangle(panorama, maxLoc, bottomRight, cv::Scalar(255, 255, 255), 5);
+    cv::resize(panorama,panorama, cv::Size(960, 540));
+    cv::imshow("matched",panorama);
     cv::waitKey(0);
     cv::destroyAllWindows();
 

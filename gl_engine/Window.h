@@ -91,6 +91,7 @@ private:
 
     int m_frame = 0;
     bool m_initialised = false;
+    QImage current_image;
     TimePoint m_frame_start;
     TimePoint m_frame_end;
     QString m_debug_text;
