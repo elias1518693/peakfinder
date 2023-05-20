@@ -38,7 +38,8 @@
 #include "nucleus/camera/Controller.h"
 #include "nucleus/Controller.h"
 #include <nucleus/tile_scheduler/Scheduler.h>
-
+#include <nucleus/utils/TinyEXIF.h>
+#include <fstream>
 namespace {
 // helper type for the visitor from https://en.cppreference.com/w/cpp/utility/variant/visit
 template <class... Ts>
@@ -310,6 +311,18 @@ void TerrainRendererItem::load_image(QString path)
         qWarning() << reader.errorString();
         return;
     }
+    std::string test=path.toStdString();
+    std::ifstream istream(test.c_str(), std::ifstream::binary);
+
+    // parse image EXIF and XMP metadata
+    TinyEXIF::EXIFInfo imageEXIF(istream);
+
+        std::cout
+            << "Image Description " << (imageEXIF.ImageWidth/imageEXIF.XResolution) * 25.4<< "\n"
+            << "Image Resolution " << imageEXIF.ImageWidth << "x" << std::to_string(imageEXIF.XResolution) << " pixels\n"
+            << "Camera Model " << imageEXIF.Make << " - " << imageEXIF.Model << "\n"
+            << "Focal Length " << imageEXIF.FocalLength << " mm" << std::endl;
+
     emit process_image(image);
     RenderThreadNotifier::instance()->notify();
 }

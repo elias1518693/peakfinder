@@ -39,7 +39,7 @@ else {
 void main(void)
 {
     float pi = 3.1415926535897932384626433f;
-    float fov = 40.0f;
+    float fov = 48.33325970089f;
     float x = sin(texcoords.x * pi);
     float y = cos(texcoords.x * pi);
     float z = texcoords.y * radians(fov);

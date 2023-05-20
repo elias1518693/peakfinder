@@ -53,6 +53,8 @@ set(ALP_NUCLEUS_SOURCES
     nucleus/camera/stored_positions.h
     nucleus/utils/Stopwatch.h nucleus/utils/Stopwatch.cpp
     nucleus/utils/terrain_mesh_index_generator.h
+    nucleus/utils/TinyExif.h
+    nucleus/utils/TinyExif.cpp
     nucleus/utils/tile_conversion.h nucleus/utils/tile_conversion.cpp
     nucleus/map_label/MapLabelModel.h nucleus/map_label/MapLabelModel.cpp
     nucleus/map_label/CameraTransformationProxyModel.h nucleus/map_label/CameraTransformationProxyModel.cpp
@@ -83,6 +85,7 @@ set(ALP_GL_SHADERS
     gl_shaders/panorama.frag
     gl_shaders/panorama.vert
     gl_shaders/sobel.frag
+    gl_shaders/cylinder.frag
     gl_shaders/encoder.glsl
 )
 set(ALP_PLAIN_RENDERER_SOURCES

@@ -145,154 +145,10 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     m_screen_quad_geometry.draw();
 
     m_shader_manager->release();
-
-    f->glFinish(); // synchronization
-    m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
-}
-
-void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
-
-    m_frame_start = std::chrono::time_point_cast<ClockResolution>(Clock::now());
-    QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
-
-    // DEPTH BUFFER
-    m_camera.set_viewport_size(m_depth_buffer->size());
-    m_depth_buffer->bind();
-    f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-    f->glEnable(GL_DEPTH_TEST);
-    f->glDepthFunc(GL_LESS);
-
-    m_shader_manager->depth_program()->bind();
-    m_tile_manager->draw(m_shader_manager->depth_program(), m_camera);
-    m_depth_buffer->unbind();
-    // END DEPTH BUFFER
-
-    m_camera.set_viewport_size(m_framebuffer->size());
-
-    m_shader_manager->tile_shader()->bind();
-    f->glClearColor(1.0, 0.0, 0.5, 1);
-    std::vector<glm::dmat4>vp = m_camera.local_view_projection_matrix_cube(m_camera.position());
-    std::vector<std::unique_ptr<Framebuffer>>fb(6);
-    for(uint i = 0; i < 6; i++){
-                fb[i] = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
-                fb[i]->resize(m_framebuffer->size());
-                fb[i]->bind();
-                f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-                f->glEnable(GL_DEPTH_TEST);
-                f->glDepthFunc(GL_LESS);
-                m_tile_manager->draw_view(m_shader_manager->tile_shader(), m_camera, vp[i]);
-                fb[i]->unbind();
-    }
-    if (framebuffer)
-        framebuffer->bind();
-    m_shader_manager->panorama_program()->bind();
-    for(uint i = 0; i < 6; i++){
-        fb[i]->bind_colour_texture_to_binding(0, i);
-        f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
-    }
-    m_shader_manager->panorama_program()->set_uniform("fov",70.0f);
-    m_screen_quad_geometry.draw();
-    /*
-        std::unique_ptr<Framebuffer> big_framebuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
-        big_framebuffer->resize({4000,4000});
-        big_framebuffer->bind();
-        for(uint i = 0; i < 6; i++){
-            fb[i]->bind_colour_texture_to_binding(0, i);
-            f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
-        }
-        m_screen_quad_geometry.draw();
-        QString imagePath(QStringLiteral("image.jpeg"));
-        QImage image = big_framebuffer->read_colour_attachment(0);
-        {
-            QImageWriter writer(imagePath);
-            if(!writer.write(image))
-                qDebug() << writer.errorString();
-        }
-        big_framebuffer->unbind();
-        captureFrame = false;
-    */
-    m_shader_manager->release();
     current_image = framebuffer->toImage();
     f->glFinish(); // synchronization
     m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
 }
-
-
-cv::Mat ComputeVCC(const cv::Mat& SP, const cv::Mat& DP, const cv::Mat& SR, const cv::Mat& DR)
-{
-    cv::Size dimP = SP.size();
-    cv::Size dimR = SR.size();
-
-    cv::Mat paddedSR, paddedDR;
-    cv::copyMakeBorder(SR, paddedSR, 0, dimP.height, 0, dimP.width, cv::BORDER_CONSTANT, cv::Scalar(0));
-    cv::copyMakeBorder(DR, paddedDR, 0, dimR.height, 0, dimR.width, cv::BORDER_CONSTANT, cv::Scalar(0));
-qDebug()<<"here";
-    cv::Mat COMP = paddedSR;
-    qDebug()<<"here";
-    cv::Mat COMR = paddedSR;
-    DP.convertTo(DP,  SP.type());
-    paddedSR.convertTo(paddedSR,  SP.type());
-    paddedDR.convertTo(paddedDR,  SP.type());
-    COMP.convertTo(COMP,  SP.type());
-    COMR.convertTo(COMR,  SP.type());
-    for (int i = 0; i < SP.rows; i++)
-    {
-        for (int j = 0; j < SP.cols; j++)
-        {
-            COMP.at<double>(i, j) = SP.at<double>(i, j) * cos(DP.at<double>(i, j));
-            COMR.at<double>(i, j) = paddedSR.at<double>(i, j) * cos(paddedDR.at<double>(i, j));
-
-        }
-    }
-    qDebug()<<"did it #############";
-    cv::Mat COMR_squared, COMP_squared;
-    cv::multiply(COMR, COMR, COMR_squared);
-    cv::multiply(COMP, COMP, COMP_squared);
-qDebug()<<"here";
-    cv::dft(COMP_squared, COMP_squared, cv::DFT_COMPLEX_OUTPUT);
-    cv::dft(COMR_squared, COMR_squared, cv::DFT_COMPLEX_OUTPUT);
-qDebug()<<"here";
-    cv::Mat VCC;
-    cv::mulSpectrums(COMP_squared, COMR_squared, VCC, cv::DFT_ROWS | cv::DFT_COMPLEX_OUTPUT, true);
-    cv::idft(VCC, VCC, cv::DFT_SCALE | cv::DFT_REAL_OUTPUT);
-qDebug()<<"here";
-    cv::flip(VCC, VCC, 1);
-    VCC = VCC(cv::Rect(0, dimP.height, dimP.width, dimP.height));
-qDebug()<<"here";
-    return VCC;
-}
-
-
-
-
-QImage keepFirstNonZeroPixels(const QImage& inputImage)
-{
-    QImage outputImage(inputImage.size(), inputImage.format());
-    outputImage.fill(qRgb(0, 0, 0)); // Fill the output image with black
-
-    for (int x = 0; x < inputImage.width(); ++x) {
-
-        for (int y = 0; y < inputImage.height(); ++y) {
-            QRgb pixel = inputImage.pixel(x, inputImage.height()-1-y);
-            if (qRed(pixel) > 0 || qGreen(pixel) > 0 || qBlue(pixel) > 0) {
-                    outputImage.setPixel(x, y, qRgb(255,255,255));
-                    //break;
-            }
-        }
-    }
-
-    return outputImage;
-}
-QImage mat_to_qimage(cv::Mat const& mat)
-{
-
-    // Create a QImage from the Mat data
-    QImage qImage(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_ARGB32);
-    qImage.bits(); // enforce deep copy
-
-    return qImage;
-}
-
 cv::Mat QImageToMat(const QImage& image)
 {
     // Convert QImage to QPixmap
@@ -332,131 +188,113 @@ cv::Mat QImageToMat(const QImage& image)
 
     return mat.clone();  // Return a cloned copy of the converted cv::Mat
 }
-void detectAndMatchSIFTFeatures(const QImage& image1, const QImage& image2, std::vector<std::vector<cv::DMatch>>& matches)
-{
-    cv::Mat mat1 = cv::Mat(image1.height(), image1.width(), CV_8UC4, (void*) image1.constBits(), image1.bytesPerLine());
-    cv::Mat mat2 = cv::Mat(image2.height(), image2.width(), CV_8UC4, (void*) image2.constBits(), image2.bytesPerLine());
+void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
+    QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
 
-    // Convert the images to grayscale
-    cv::Mat gray1, gray2;
-    cv::cvtColor(mat1, gray1, cv::COLOR_BGRA2GRAY);
-    cv::cvtColor(mat2, gray2, cv::COLOR_BGRA2GRAY);
-    std::vector<cv::KeyPoint> kp1, kp2;
-    cv::Mat des1, des2;
-    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
-    sift->detectAndCompute(mat1, cv::noArray(), kp1, des1);
-    sift->detectAndCompute(mat2, cv::noArray(), kp2, des2);
+    // DEPTH BUFFER
+    m_camera.set_viewport_size(m_depth_buffer->size());
+    m_depth_buffer->bind();
+    f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    f->glEnable(GL_DEPTH_TEST);
+    f->glDepthFunc(GL_LESS);
 
-    // BFMatcher with default params
-    cv::BFMatcher bf(cv::NORM_L2);
-    bf.knnMatch(des1, des2, matches, 2);
+    m_shader_manager->depth_program()->bind();
+    m_tile_manager->draw(m_shader_manager->depth_program(), m_camera);
+    m_depth_buffer->unbind();
+    // END DEPTH BUFFER
 
-    // Apply ratio test
-    std::vector<cv::DMatch> good;
-    for(size_t i = 0; i < matches.size(); i++) {
-        if(matches[i][0].distance < 0.6 * matches[i][1].distance) {
-            good.push_back(matches[i][0]);
-        }
+    m_camera.set_viewport_size(m_framebuffer->size());
+
+    m_shader_manager->tile_shader()->bind();
+    f->glClearColor(1.0, 0.0, 0.5, 1);
+    std::vector<glm::dmat4>vp = m_camera.local_view_projection_matrix_cube(m_camera.position());
+    std::vector<std::unique_ptr<Framebuffer>>fb(6);
+    for(uint i = 0; i < 6; i++){
+                fb[i] = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
+                fb[i]->resize(m_framebuffer->size());
+                fb[i]->bind();
+                f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+                f->glEnable(GL_DEPTH_TEST);
+                f->glDepthFunc(GL_LESS);
+                m_tile_manager->draw_view(m_shader_manager->tile_shader(), m_camera, vp[i]);
+                fb[i]->unbind();
     }
-
-    // Draw matches
-    cv::Mat matchedImage;
-    cv::drawMatches(mat1, kp1, mat2, kp2, good, matchedImage, cv::Scalar::all(-1), cv::Scalar::all(-1),
-        std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-
-    matchedImage.convertTo(matchedImage, CV_8UC4);
-    QImage qmatchedImage = mat_to_qimage(matchedImage);
-    qDebug() << matches.size();
-    qDebug() << good.size();
-    //qDebug() << matchesMask.size();
-
-    QString imagePath(QStringLiteral("matchedimage.jpeg"));
-    {
-        QImageWriter writer(imagePath);
-        if(!writer.write(qmatchedImage))
-            qDebug() << writer.errorString();
+    std::unique_ptr<Framebuffer> transferBuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));;
+    if (framebuffer)
+        framebuffer->bind();
+    else{
+        transferBuffer->resize(glm::dvec2(8000,8000));
+        transferBuffer->bind();
+        f->glDisable(GL_DEPTH_TEST);
     }
-  }
-
-void detectAndMatchORBFeatures(const QImage& image1, const QImage& image2, std::vector<cv::DMatch>& matches)
-{
-    // Convert the QImage objects to cv::Mat objects
-    cv::Mat mat1 = cv::Mat(image1.height(), image1.width(), CV_8UC4, (void*) image1.constBits(), image1.bytesPerLine());
-    cv::Mat mat2 = cv::Mat(image2.height(), image2.width(), CV_8UC4, (void*) image2.constBits(), image2.bytesPerLine());
-
-    // Convert the images to grayscale
-    cv::Mat gray1, gray2;
-    cv::cvtColor(mat1, gray1, cv::COLOR_BGRA2GRAY);
-    cv::cvtColor(mat2, gray2, cv::COLOR_BGRA2GRAY);
-
-    // Detect keypoints and compute descriptors using ORB
-    cv::Ptr<cv::ORB> orb = cv::ORB::create(2000);
-    std::vector<cv::KeyPoint> keypoints1, keypoints2;
-    cv::Mat descriptors1, descriptors2;
-    orb->detectAndCompute(mat1, cv::Mat(), keypoints1, descriptors1);
-    orb->detectAndCompute(mat2, cv::Mat(), keypoints2, descriptors2);
-
-    // Match features using Brute-Force Matcher
-    cv::BFMatcher matcher(cv::NORM_HAMMING);
-    std::vector<cv::DMatch> bf_matches;
-    matcher.match(descriptors1, descriptors2, bf_matches);
-
-
-    const float dist_ratio = 0.8;
-    for (const cv::DMatch& match : bf_matches) {
-        //if (match.distance < dist_ratio * bf_matches[match.queryIdx].distance) {
-            matches.push_back(match);
-        //}
+    m_shader_manager->panorama_program()->bind();
+    for(uint i = 0; i < 6; i++){
+        fb[i]->bind_colour_texture_to_binding(0, i);
+        f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
     }
-    // Sort matches by score
-     std::sort(matches.begin(), matches.end());
+    m_shader_manager->panorama_program()->set_uniform("fov",48.33325970089f);
+    m_screen_quad_geometry.draw();
 
-     // Remove not so good matches
-     const float GOOD_MATCH_PERCENT = 0.01f;
-     const int numGoodMatches = matches.size() * GOOD_MATCH_PERCENT;
-     matches.erase(matches.begin()+numGoodMatches, matches.end());
-     /*
-    cv::Mat mask;
-    std::vector<cv::Point2f> points1, points2;
-    for( size_t i = 0; i < matches.size(); i++ )
-      {
-        points1.push_back( keypoints1[ matches[i].queryIdx ].pt );
-        points2.push_back( keypoints2[ matches[i].trainIdx ].pt );
-      }
-    cv::Mat h = cv::findHomography(points1, points2, cv::RANSAC, 3,mask);
-    std::vector<cv::DMatch> matchesMask(mask.rows * mask.cols);
-    for(int i = 0; i < mask.rows; i++) {
-        for(int j = 0; j < mask.cols; j++) {
-            matchesMask[i * mask.cols + j] = mask.at<cv::DMatch>(i, j);
-        }
-    }
-    */
-    // Draw matches between the images
-        cv::Mat matchedImage;
+    m_shader_manager->release();
+    if(framebuffer)
+        current_image = framebuffer->toImage();
+    else
+        current_image = transferBuffer->read_colour_attachment(0);
+   cv::Mat test = QImageToMat(current_image);
+   cv::resize(test,test, cv::Size(960, 540));
+   cv::imshow("input panroama",test);
+   cv::waitKey(0);
+   cv::destroyAllWindows();
 
-        cv::drawMatches(mat1, keypoints1, mat2, keypoints2, matches, matchedImage);
-
-        // Convert the matched image back to QImage and display it
-        matchedImage.convertTo(matchedImage, CV_8UC4);
-        QImage qmatchedImage = mat_to_qimage(matchedImage);
-        qDebug() << matches.size();
-        //qDebug() << matchesMask.size();
-
-        QString imagePath(QStringLiteral("matchedimage.jpeg"));
-        {
-            QImageWriter writer(imagePath);
-            if(!writer.write(qmatchedImage))
-                qDebug() << writer.errorString();
-        }
 }
+
+
+
+
+
+
+QImage keepFirstNonZeroPixels(const QImage& inputImage)
+{
+    QImage outputImage(inputImage.size(), inputImage.format());
+    outputImage.fill(qRgb(0, 0, 0)); // Fill the output image with black
+
+    for (int x = 0; x < inputImage.width(); ++x) {
+
+        for (int y = 0; y < inputImage.height(); ++y) {
+            QRgb pixel = inputImage.pixel(x, inputImage.height()-1-y);
+            if (qRed(pixel) > 0 || qGreen(pixel) > 0 || qBlue(pixel) > 0) {
+                    outputImage.setPixel(x, y, qRgb(255,255,255));
+                    //break;
+            }
+        }
+    }
+
+    return outputImage;
+}
+QImage mat_to_qimage(cv::Mat const& mat)
+{
+
+    // Create a QImage from the Mat data
+    QImage qImage(mat.data, mat.cols, mat.rows, mat.step, QImage::Format_ARGB32);
+    qImage.bits(); // enforce deep copy
+
+    return qImage;
+}
+
+
 
 void Window::process_image(const QImage& image){
     //QImage greyscale = image.convertToFormat(QImage::Format_Grayscale8);
     QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
     cv::Mat debugImage;
 
+    this->paintPanorama();
+    current_image = image;
     std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
-    framebuffer->resize(m_framebuffer->size());
+    float fov = glm::radians(48.33325970089f);
+    float k = fov * current_image.width()/(2* glm::pi<float>() * framebuffer->size().x);
+    qDebug()<<k;
+    framebuffer->resize(glm::vec2(current_image.width() * k, current_image.height() * k));
      std::unique_ptr<Framebuffer> framebuffer_out = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
     qDebug()<<framebuffer->size().x << framebuffer->size().y;
         m_shader_manager->sobel_program()->bind();
@@ -480,7 +318,7 @@ void Window::process_image(const QImage& image){
     cv::magnitude(sX, sY, mag1);
     cv::phase(sX, sY, phase, true);
 
-    cv::resize(image_real,debugImage, cv::Size(960, 540));
+    cv::resize(mag1,debugImage, cv::Size(960, 540));
     cv::imshow("input real",debugImage);
     cv::waitKey(0);
     cv::destroyAllWindows();
