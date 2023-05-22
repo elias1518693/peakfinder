@@ -146,6 +146,7 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
 
     m_shader_manager->release();
     current_image = framebuffer->toImage();
+    paintPanorama();
     f->glFinish(); // synchronization
     m_frame_end = std::chrono::time_point_cast<ClockResolution>(Clock::now());
 }
@@ -202,16 +203,18 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
     m_tile_manager->draw(m_shader_manager->depth_program(), m_camera);
     m_depth_buffer->unbind();
     // END DEPTH BUFFER
-
-    m_camera.set_viewport_size(m_framebuffer->size());
+    glm::dvec2 size = glm::dvec2(glm::max(m_framebuffer->size().x, m_framebuffer->size().y));
+    m_camera.set_viewport_size(size);
+    m_camera.set_field_of_view(90);
 
     m_shader_manager->tile_shader()->bind();
     f->glClearColor(1.0, 0.0, 0.5, 1);
     std::vector<glm::dmat4>vp = m_camera.local_view_projection_matrix_cube(m_camera.position());
     std::vector<std::unique_ptr<Framebuffer>>fb(6);
+
     for(uint i = 0; i < 6; i++){
                 fb[i] = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
-                fb[i]->resize(m_framebuffer->size());
+                fb[i]->resize(size);
                 fb[i]->bind();
                 f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
                 f->glEnable(GL_DEPTH_TEST);
@@ -232,19 +235,16 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
         fb[i]->bind_colour_texture_to_binding(0, i);
         f->glUniform1i(m_shader_manager->panorama_program()->uniform_location("texture_sampler"+std::to_string(i)), i);
     }
-    m_shader_manager->panorama_program()->set_uniform("fov",48.33325970089f);
+    m_shader_manager->panorama_program()->set_uniform("fov",34.2054579f);
     m_screen_quad_geometry.draw();
 
     m_shader_manager->release();
     if(framebuffer)
         current_image = framebuffer->toImage();
-    else
+    else{
         current_image = transferBuffer->read_colour_attachment(0);
-   cv::Mat test = QImageToMat(current_image);
-   cv::resize(test,test, cv::Size(960, 540));
-   cv::imshow("input panroama",test);
-   cv::waitKey(0);
-   cv::destroyAllWindows();
+    }
+
 
 }
 
@@ -284,23 +284,26 @@ QImage mat_to_qimage(cv::Mat const& mat)
 
 
 void Window::process_image(const QImage& image){
+    m_processImage = true;
     //QImage greyscale = image.convertToFormat(QImage::Format_Grayscale8);
     QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
     cv::Mat debugImage;
 
-    this->paintPanorama();
-    current_image = image;
+    //this->paintPanorama();
     std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
-    float fov = glm::radians(48.33325970089f);
+    float fov = glm::radians(34.2054579f);
     float k = fov * current_image.width()/(2* glm::pi<float>() * framebuffer->size().x);
+    float test = fov * current_image.height()/(2* glm::pi<float>() * framebuffer->size().y);
     qDebug()<<k;
-    framebuffer->resize(glm::vec2(current_image.width() * k, current_image.height() * k));
+    glm::vec2 imageSize = glm::vec2(image.width() * k , image.height() * test );
+    framebuffer->resize(glm::vec2(image.width() * k  , image.height() * test ));
      std::unique_ptr<Framebuffer> framebuffer_out = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
     qDebug()<<framebuffer->size().x << framebuffer->size().y;
         m_shader_manager->sobel_program()->bind();
+        f->glUniform2f(m_shader_manager->sobel_program()->uniform_location("imageSize"),framebuffer->size().x, framebuffer->size().y);
+        f->glUniform1f(m_shader_manager->sobel_program()->uniform_location("fov"), fov);
         framebuffer->bind();
         f->glClearColor(0.0, 0.0, 0.0, 1);
-
         f->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         f->glDisable(GL_DEPTH_TEST);
         f->glDisable(GL_BLEND);
@@ -318,7 +321,7 @@ void Window::process_image(const QImage& image){
     cv::magnitude(sX, sY, mag1);
     cv::phase(sX, sY, phase, true);
 
-    cv::resize(mag1,debugImage, cv::Size(960, 540));
+    cv::resize(mag1,debugImage, cv::Size(mag1.cols, mag1.rows));
     cv::imshow("input real",debugImage);
     cv::waitKey(0);
     cv::destroyAllWindows();
@@ -336,7 +339,7 @@ void Window::process_image(const QImage& image){
     int w = image_real.cols;
     int h = image_real.rows;
 
-    cv::resize(mag2,debugImage, cv::Size(960, 540));
+    cv::resize(mag2,debugImage, cv::Size(mag2.cols/10,mag2.rows/10));
     cv::imshow("input panroama",debugImage);
     cv::waitKey(0);
     cv::destroyAllWindows();
@@ -350,35 +353,12 @@ void Window::process_image(const QImage& image){
 
     //Draw rectangle
     cv::Point bottomRight(maxLoc.x + w, maxLoc.y + h);
-    cv::rectangle(panorama, maxLoc, bottomRight, cv::Scalar(255, 255, 255), 5);
-    cv::resize(panorama,panorama, cv::Size(960, 540));
+    cv::rectangle(panorama, maxLoc, bottomRight, cv::Scalar(255, 255, 255), 12);
+    image_real.copyTo(panorama.rowRange(maxLoc.y, bottomRight.y).colRange(maxLoc.x, bottomRight.x), image_real != 0);
+    cv::resize(panorama,panorama, cv::Size(panorama.cols/8,panorama.rows/8));
     cv::imshow("matched",panorama);
     cv::waitKey(0);
     cv::destroyAllWindows();
-
-    //debug images
-    /*
-    QImage out_image = mat_to_qimage(image_real);
-    QString imagePath(QStringLiteral("sobel.jpeg"));
-    {
-        QImageWriter writer(imagePath);
-        if(!writer.write(out_image))
-            qDebug() << writer.errorString();
-    }
-
-    QString realPath(QStringLiteral("real_image.jpeg"));
-    {
-        QImageWriter writer(realPath);
-        if(!writer.write(input))
-            qDebug() << writer.errorString();
-    }
-    QString panoramaPath(QStringLiteral("panorama.jpeg"));
-    {
-        QImageWriter writer(panoramaPath);
-        if(!writer.write(mat_to_qimage(panorama)))
-            qDebug() << writer.errorString();
-    }
-    */
 }
 void Window::paintOverGL(QPainter* painter)
 {
@@ -498,3 +478,5 @@ nucleus::camera::AbstractDepthTester* Window::depth_tester()
 {
     return this;
 }
+
+

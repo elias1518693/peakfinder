@@ -2,6 +2,8 @@ in vec2 texcoords;
 out vec4 fragColor;
 
 uniform sampler2D inputTexture;
+uniform vec2 imageSize;
+uniform float fov;
 vec2 cubeMapTo2D(in vec3 cubeVec) {
     float absX = abs(cubeVec.x);
     float absY = abs(cubeVec.y);
@@ -38,12 +40,13 @@ else {
 
 void main(void)
 {
+
+    vec2 uv = texcoords;
     float pi = 3.1415926535897932384626433f;
-    float fov = 48.33325970089f;
-    float x = sin(texcoords.x * pi);
-    float y = cos(texcoords.x * pi);
-    float z = texcoords.y * radians(fov);
-    vec2 uv = cubeMapTo2D(vec3(x,y,z));
+    float x = sin(uv.x);
+    float y = cos(uv.x);
+    float z = uv.y * fov;
+    uv = cubeMapTo2D(vec3(x,y,z));
     fragColor = vec4(texture(inputTexture, uv).xyz , 1.0 );
         //fragColor = vec4(vec3(1) , 1.0 );
     //fragColor = vec4( sobel.rgb * (1.0-texcoords.y), 1.0 );

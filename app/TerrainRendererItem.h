@@ -118,7 +118,7 @@ private:
     float m_camera_rotation_from_north = 0;
     QPointF m_camera_operation_centre;
     bool m_camera_operation_centre_visibility = false;
-    float m_field_of_view = 75;
+    float m_field_of_view = 90;
     int m_frame_limit = 60;
     float m_render_quality = 0.5f;
 
