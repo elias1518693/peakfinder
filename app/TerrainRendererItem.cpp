@@ -324,5 +324,5 @@ void TerrainRendererItem::load_image(QString path)
             << "Focal Length " << imageEXIF.FocalLength << " mm" << std::endl;
 
     emit process_image(image);
-    RenderThreadNotifier::instance()->notify();
+    //RenderThreadNotifier::instance()->notify();
 }

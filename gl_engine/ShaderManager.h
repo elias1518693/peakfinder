@@ -37,6 +37,7 @@ public:
     [[nodiscard]] ShaderProgram* depth_program() const;
     [[nodiscard]] ShaderProgram* panorama_program() const;
     [[nodiscard]] ShaderProgram* sobel_program() const;
+    [[nodiscard]] ShaderProgram* cylinder_program() const;
     void release();
 public slots:
     void reload_shaders();
@@ -51,6 +52,7 @@ private:
     std::unique_ptr<ShaderProgram> m_depth_program;
     std::unique_ptr<ShaderProgram> m_panorama_program;
     std::unique_ptr<ShaderProgram> m_sobel_program;
+    std::unique_ptr<ShaderProgram> m_cylinder_program;
 
 };
 }

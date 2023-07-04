@@ -58,6 +58,9 @@ ShaderManager::ShaderManager()
                 ShaderProgram::Files({"gl_shaders/panorama.vert"}),
                 ShaderProgram::Files({"gl_shaders/panorama.frag"}));
     m_sobel_program = std::make_unique<ShaderProgram>(
+                ShaderProgram::Files({"gl_shaders/screen_pass.vert"}),
+                ShaderProgram::Files({"gl_shaders/sobel.frag"}));
+    m_cylinder_program = std::make_unique<ShaderProgram>(
                 ShaderProgram::Files({"gl_shaders/panorama.vert"}),
                 ShaderProgram::Files({"gl_shaders/cylinder.frag"}));
 
@@ -68,6 +71,7 @@ ShaderManager::ShaderManager()
     m_program_list.push_back(m_depth_program.get());
     m_program_list.push_back(m_panorama_program.get());
     m_program_list.push_back(m_sobel_program.get());
+    m_program_list.push_back(m_cylinder_program.get());
 }
 
 ShaderManager::~ShaderManager() = default;
@@ -105,6 +109,11 @@ ShaderProgram* ShaderManager::panorama_program() const
 ShaderProgram* ShaderManager::sobel_program() const
 {
     return m_sobel_program.get();
+}
+
+ShaderProgram* ShaderManager::cylinder_program() const
+{
+    return m_cylinder_program.get();
 }
 
 

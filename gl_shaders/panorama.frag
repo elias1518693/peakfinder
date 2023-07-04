@@ -5,7 +5,7 @@ uniform sampler2D texture_sampler2;
 uniform sampler2D texture_sampler3;
 uniform sampler2D texture_sampler4;
 uniform sampler2D texture_sampler5;
-uniform float fov = 90.0;
+uniform float fov;
 out lowp vec4 out_Color;
 
 vec2 cubeMapTo2D(in vec3 cubeVec) {
@@ -134,7 +134,7 @@ void main() {
 
     float x = sin(texcoords.x * pi);
     float y = cos(texcoords.x * pi);
-    float z = texcoords.y * radians(fov);
+    float z = texcoords.y * tan(fov/2);
 
 
     out_Color = texture(getSampler(vec3(x,y,z)), cubeMapTo2D(vec3(x,y,z)));

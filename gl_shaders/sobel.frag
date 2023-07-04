@@ -24,18 +24,19 @@ void make_kernel(inout float n[9], sampler2D tex, vec2 coord)
 
 void main(void)
 {
+        vec2 uv = vec2(texcoords.x, 1.0 - texcoords.y);
         float n[9];
-        make_kernel( n, inputTexture, texcoords);
+        make_kernel( n, inputTexture, uv);
 
         float sobel_edge_h = n[2] + (2.0*n[5]) + n[8] - (n[0] + (2.0*n[3]) + n[6]);
         float sobel_edge_v = n[0] + (2.0*n[1]) + n[2] - (n[6] + (2.0*n[7]) + n[8]);
         float sobel = sqrt((sobel_edge_h * sobel_edge_h) + (sobel_edge_v * sobel_edge_v));
         float direction = atan(sobel_edge_h, sobel_edge_v)/3.1415926538;
         direction = (direction+1)/2.0f;
-        if(sobel < 0.66){
+        //if(sobel < 0.66){
 
-            sobel = 0;
-        }
-        fragColor = vec4(vec3(sobel, direction, 0) , 1.0 );
+        //    sobel = 0;
+        //}
+        fragColor = vec4(vec3(sobel) , 1.0 );
         //fragColor = vec4( sobel.rgb * (1.0-texcoords.y), 1.0 );
 }
