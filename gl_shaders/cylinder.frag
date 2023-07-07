@@ -33,12 +33,15 @@ vec2 cubeMapTo2D(in vec3 cubeVec) {
 
     return vec2(x, y);
  }
-vec2 caclCoordinates(vec2 uv){
+vec2 calcCoordinates(vec2 uv){
+    vec2 thetaphi = texcoords * vec2(3.1415926535897932384626433832795, 1.5707963267948966192313216916398);
+    vec3 rayDirection = vec3(cos(thetaphi.y) * cos(thetaphi.x), cos(thetaphi.y) * sin(thetaphi.x), sin(thetaphi.y));
     float pi = 3.1415926535897932384626433f;
     float x = sin(uv.x * pi);
     float y = cos(uv.x * pi);
     float z = uv.y * tan(fov/2);
     return cubeMapTo2D(vec3(x,y,z));
+
 }
 
 void make_kernel(inout float n[9], sampler2D tex, vec2 coord)
@@ -47,22 +50,22 @@ void make_kernel(inout float n[9], sampler2D tex, vec2 coord)
         float w = 1.0 / texSize.x;
         float h = 1.0 / texSize.y;
 
-        n[0] = dot(texture2D(tex,caclCoordinates( coord + vec2( -w, -h))).xyz, vec3(0.299, 0.587, 0.114));
-        n[1] = dot(texture2D(tex,caclCoordinates( coord + vec2(0.0, -h))).xyz, vec3(0.299, 0.587, 0.114));
-        n[2] = dot(texture2D(tex,caclCoordinates( coord + vec2(  w, -h))).xyz, vec3(0.299, 0.587, 0.114));
-        n[3] = dot(texture2D(tex,caclCoordinates( coord + vec2( -w, 0.0))).xyz, vec3(0.299, 0.587, 0.114));
-        n[4] = dot(texture2D(tex,caclCoordinates( coord)).xyz, vec3(0.299, 0.587, 0.114));
-        n[5] = dot(texture2D(tex,caclCoordinates( coord + vec2(  w, 0.0))).xyz, vec3(0.299, 0.587, 0.114));
-        n[6] = dot(texture2D(tex,caclCoordinates( coord + vec2( -w, h))).xyz, vec3(0.299, 0.587, 0.114));
-        n[7] = dot(texture2D(tex,caclCoordinates( coord + vec2(0.0, h))).xyz, vec3(0.299, 0.587, 0.114));
-        n[8] = dot(texture2D(tex,caclCoordinates( coord + vec2(  w, h))).xyz, vec3(0.299, 0.587, 0.114));
+        n[0] = dot(texture2D(tex,calcCoordinates( coord + vec2( -w, -h))).xyz, vec3(0.299, 0.587, 0.114));
+        n[1] = dot(texture2D(tex,calcCoordinates( coord + vec2(0.0, -h))).xyz, vec3(0.299, 0.587, 0.114));
+        n[2] = dot(texture2D(tex,calcCoordinates( coord + vec2(  w, -h))).xyz, vec3(0.299, 0.587, 0.114));
+        n[3] = dot(texture2D(tex,calcCoordinates( coord + vec2( -w, 0.0))).xyz, vec3(0.299, 0.587, 0.114));
+        n[4] = dot(texture2D(tex,calcCoordinates( coord)).xyz, vec3(0.299, 0.587, 0.114));
+        n[5] = dot(texture2D(tex,calcCoordinates( coord + vec2(  w, 0.0))).xyz, vec3(0.299, 0.587, 0.114));
+        n[6] = dot(texture2D(tex,calcCoordinates( coord + vec2( -w, h))).xyz, vec3(0.299, 0.587, 0.114));
+        n[7] = dot(texture2D(tex,calcCoordinates( coord + vec2(0.0, h))).xyz, vec3(0.299, 0.587, 0.114));
+        n[8] = dot(texture2D(tex,calcCoordinates( coord + vec2(  w, h))).xyz, vec3(0.299, 0.587, 0.114));
 }
 
 
 void main(void)
 {
 
-    vec2 uv = (texcoords) * 2;
+    vec2 uv = (texcoords);
 
 
     ivec2 texSize = textureSize(inputTexture, 0);
@@ -81,6 +84,4 @@ void main(void)
     //    sobel = 0;
     //}
     fragColor = vec4(vec3(sobel) , 1.0 );
-
-
 }

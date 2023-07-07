@@ -356,19 +356,48 @@ cv::Mat ruzonCompassOperator(const cv::Mat& image) {
     cv::destroyAllWindows();
     return edges;
 }
+
+cv::Mat calculateHomographyMatrix(const cv::Size& inputSize1, const cv::Size& inputSize2, float fov) {
+    double width1 = inputSize1.width;
+    double height1 = inputSize1.height;
+    double width2 = inputSize2.width;
+    double height2 = inputSize2.height;
+
+    cv::Mat M1 = cv::Mat::eye(3, 3, CV_64F);
+    M1.at<double>(0, 2) = (width1 - 1) / 2;
+    M1.at<double>(1, 2) = (height1 - 1) / 2;
+    M1.at<double>(0, 0) = M1.at<double>(1, 1) = (width1 / 2) / atan(fov/ 2.0 * CV_PI / 180.0);
+
+    cv::Mat M2 = cv::Mat::eye(3, 3, CV_64F);
+    M2.at<double>(0, 2) = (width2 - 1) / 2;
+    M2.at<double>(1, 2) = (height2 - 1) / 2;
+    M2.at<double>(0, 0) = M2.at<double>(1, 1) = (width2 / 2) / atan(360 / 2 * CV_PI / 180);
+
+    cv::Mat result = M2 * M1.inv();
+    return result;
+}
 void Window::process_image(const QImage& image){
     //QImage greyscale = image.convertToFormat(QImage::Format_Grayscale8);
     QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
 
     cv::Mat debugImage;
+    cv::Mat scaledImage = QImageToMat(image);
     //this->paintPanorama();
-    std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(image, Framebuffer::DepthFormat::None);
+
     float fov = glm::radians(m_matching_fov);
-    float k = fov * current_image.width()/(2* glm::pi<float>() * framebuffer->size().x);
-    float test = fov * current_image.height()/(2* glm::pi<float>() * framebuffer->size().y);
-    qDebug()<<k;
-     QImage scaled = image.scaled(image.width() * k , image.height() * k, Qt::KeepAspectRatio);
-    framebuffer->resize(glm::vec2(image.width() * k * 2,  image.height() * k * 2));
+    cv::Mat homeo = calculateHomographyMatrix(cv::Size(current_image.width(), current_image.height()),cv::Size(image.width(), image.height()), m_matching_fov);
+    cv::resize(scaledImage, scaledImage, cv::Size(image.width() * homeo.at<double>(0, 0), image.height()* homeo.at<double>(1, 1)));
+    cv::resize(scaledImage,debugImage, cv::Size(scaledImage.cols/4, scaledImage.rows/4));
+    cv::imshow("scaled image",debugImage);
+    cv::waitKey(0);
+    cv::destroyAllWindows();
+    float k = fov * current_image.width()/(2* glm::pi<float>() * image.width());
+    qDebug()<< k;
+    qDebug()<< homeo.at<double>(0, 0);
+    QImage scaledImageQt = mat_to_qimage(scaledImage);
+    std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(scaledImageQt, Framebuffer::DepthFormat::None);
+    QImage scaled = image.scaled(scaledImageQt.width() , scaledImageQt.height(), Qt::KeepAspectRatio);
+    framebuffer->resize(glm::vec2(scaledImageQt.width(),  scaledImageQt.height()));
      std::unique_ptr<Framebuffer> framebuffer_out = std::make_unique<Framebuffer>(scaled, Framebuffer::DepthFormat::None);
     qDebug()<<framebuffer->size().x << framebuffer->size().y;
         m_shader_manager->cylinder_program()->bind();
@@ -409,6 +438,7 @@ void Window::process_image(const QImage& image){
     cv::cvtColor(panorama, panorama, cv::COLOR_BGR2GRAY);
     panorama.convertTo(panorama,CV_32F, 1.0/255.0);
 
+
     cv::Mat out_mat;
     int w = image_real.cols;
     int h = image_real.rows;
@@ -425,7 +455,7 @@ void Window::process_image(const QImage& image){
     cv::matchTemplate(panorama,image_real,out_mat,cv::TM_CCORR_NORMED);
 
     cv::resize(out_mat,debugImage, cv::Size(panorama.cols/10,panorama.rows/10));
-    cv::imshow("input panroama",debugImage);
+    cv::imshow("heat map",debugImage);
     cv::waitKey(0);
     cv::destroyAllWindows();
     double minVal = 0;
@@ -560,5 +590,4 @@ nucleus::camera::AbstractDepthTester* Window::depth_tester()
 {
     return this;
 }
-
 
