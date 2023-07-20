@@ -16,6 +16,32 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#include "utils.h"
+import QtQuick
+import QtQuick.Controls.Material
+import QtQuick.Layouts
+import Alpine
 
+ApplicationWindow {
+    visible: true
+    property alias loaded_item: mainLoader.item
+    Material.theme: loaded_item ? loaded_item.theme : Material.System
+    Material.accent: loaded_item ? loaded_item.accent : Material.Pink
 
+    Loader {
+        id: mainLoader
+        anchors.fill: parent
+        source: _qmlPath + "Main.qml"
+        focus: true
+    }
+
+    Connections{
+        target: _hotreloader
+        function onWatched_source_changed() {
+            mainLoader.active = false;
+            _hotreloader.clear_cache();
+            mainLoader.setSource(_qmlPath+ "Main.qml")
+            mainLoader.active = true;
+        }
+    }
+
+}

@@ -21,8 +21,12 @@
 #include <unordered_set>
 
 #include <QBuffer>
+#include <QDebug>
+#include <QNetworkInformation>
 #include <QStandardPaths>
 #include <QTimer>
+#include <fmt/chrono.h>
+#include <fmt/core.h>
 
 #include "nucleus/tile_scheduler/utils.h"
 #include "nucleus/utils/tile_conversion.h"
@@ -53,7 +57,6 @@ Scheduler::Scheduler(const QByteArray& default_ortho_tile, const QByteArray& def
 
     m_default_ortho_tile = std::make_shared<QByteArray>(default_ortho_tile);
     m_default_height_tile = std::make_shared<QByteArray>(default_height_tile);
-    read_disk_cache();
 }
 
 Scheduler::~Scheduler() = default;
@@ -64,12 +67,57 @@ void Scheduler::update_camera(const camera::Definition& camera)
     schedule_update();
 }
 
-void Scheduler::receive_quads(const std::vector<tile_types::TileQuad>& new_quads)
+void Scheduler::receive_quad(const tile_types::TileQuad& new_quad)
 {
-    m_ram_cache.insert(new_quads);
-    schedule_purge();
-    schedule_update();
-    schedule_persist();
+    using Status = tile_types::NetworkInfo::Status;
+#ifdef __EMSCRIPTEN__
+    // webassembly doesn't report 404 (well, probably it does, but not if there is a cors failure as well).
+    // so we'll simply treat any 404 as network error.
+    // however, we need to pass tiles with zoomlevel < 10, otherwise the top of the tree won't be built.
+    if (new_quad.network_info().status == Status::Good || new_quad.id.zoom_level < 10) {
+        m_ram_cache.insert(new_quad);
+        schedule_purge();
+        schedule_update();
+        schedule_persist();
+        emit quad_received(new_quad.id);
+    }
+#else
+    switch (new_quad.network_info().status) {
+    case Status::Good:
+    case Status::NotFound:
+        m_ram_cache.insert(new_quad);
+        schedule_purge();
+        schedule_update();
+        schedule_persist();
+        emit quad_received(new_quad.id);
+        update_stats();
+        break;
+    case Status::NetworkError:
+        // do not persist the tile.
+        // do not reschedule retrieval (wait for user input or a reconnect signal).
+        // do not purge (nothing was added, so no need to check).
+        // do nothing.
+        break;
+    }
+#endif
+}
+
+void Scheduler::set_network_reachability(QNetworkInformation::Reachability reachability)
+{
+    switch (reachability) {
+    case QNetworkInformation::Reachability::Online:
+    case QNetworkInformation::Reachability::Local:
+    case QNetworkInformation::Reachability::Site:
+    case QNetworkInformation::Reachability::Unknown:
+        qDebug() << "enabling network";
+        m_network_requests_enabled = true;
+        schedule_update();
+        break;
+    case QNetworkInformation::Reachability::Disconnected:
+        qDebug() << "disabling network";
+        m_network_requests_enabled = false;
+        break;
+    }
 }
 
 void Scheduler::update_gpu_quads()
@@ -85,20 +133,21 @@ void Scheduler::update_gpu_quads()
         // create GpuQuad based on cpu quad
         tile_types::GpuTileQuad gpu_quad;
         gpu_quad.id = quad.id;
-        for (unsigned i = 0; i < quad.n_tiles; ++i) {
+        assert(quad.n_tiles == 4);
+        for (unsigned i = 0; i < 4; ++i) {
             gpu_quad.tiles[i].id = quad.tiles[i].id;
             gpu_quad.tiles[i].bounds = m_aabb_decorator->aabb(quad.tiles[i].id);
 
             // unpacking the byte data takes long
             const auto* ortho_data = m_default_ortho_tile.get();
-            if (quad.tiles[i].ortho) {
+            if (quad.tiles[i].ortho->size()) {
                 ortho_data = quad.tiles[i].ortho.get();
             }
             auto ortho = nucleus::utils::tile_conversion::toQImage(*ortho_data);
             gpu_quad.tiles[i].ortho = std::make_shared<QImage>(std::move(ortho));
 
             const auto* height_data = m_default_height_tile.get();
-            if (quad.tiles[i].height) {
+            if (quad.tiles[i].height->size()) {
                 height_data = quad.tiles[i].height.get();
             }
             auto heightraster = nucleus::utils::tile_conversion::qImage2uint16Raster(nucleus::utils::tile_conversion::toQImage(*height_data));
@@ -108,17 +157,15 @@ void Scheduler::update_gpu_quads()
         return true;
     });
 
-    std::vector<tile_types::GpuCacheInfo> tiles_to_put_in_gpu_cache;
-    tiles_to_put_in_gpu_cache.reserve(new_gpu_quads.size());
-    std::transform(new_gpu_quads.cbegin(), new_gpu_quads.cend(), std::back_inserter(tiles_to_put_in_gpu_cache), [](const tile_types::GpuTileQuad& t) {
-        return tile_types::GpuCacheInfo { t.id };
-    });
-    m_gpu_cached.insert(tiles_to_put_in_gpu_cache);
+    for (const auto& q : new_gpu_quads) {
+        m_gpu_cached.insert(tile_types::GpuCacheInfo { q.id });
+    }
 
     m_gpu_cached.visit([&should_refine](const tile_types::GpuCacheInfo& quad) {
         return should_refine(quad.id);
     });
 
+    m_gpu_cached.set_capacity(m_gpu_quad_limit);
     const auto superfluous_quads = m_gpu_cached.purge();
 
     // elimitate double entries (happens when the gpu has not enough space for all quads selected above)
@@ -136,58 +183,48 @@ void Scheduler::update_gpu_quads()
     });
 
     emit gpu_quads_updated(new_gpu_quads, { superfluous_ids.cbegin(), superfluous_ids.cend() });
+    update_stats();
 }
 
 void Scheduler::send_quad_requests()
 {
+    if (!m_network_requests_enabled)
+        return;
     auto currently_active_tiles = tiles_for_current_camera_position();
-    std::erase_if(currently_active_tiles, [this](const tile::Id& id) {
-        return m_ram_cache.contains(id);
+    const auto current_time = utils::time_since_epoch();
+    std::erase_if(currently_active_tiles, [this, current_time](const tile::Id& id) {
+        return m_ram_cache.contains(id) && m_ram_cache.peak_at(id).network_info().timestamp + m_retirement_age_for_tile_cache > current_time;
     });
     emit quads_requested(currently_active_tiles);
 }
 
 void Scheduler::purge_ram_cache()
 {
-    if (m_ram_cache.n_cached_objects() < unsigned(float(m_ram_quad_limit) * 1.1f))
+    if (m_ram_cache.n_cached_objects() <= unsigned(float(m_ram_quad_limit) * 1.05f)){
         return;
+    }
 
     const auto should_refine = tile_scheduler::utils::refineFunctor(m_current_camera, m_aabb_decorator, m_permissible_screen_space_error, m_ortho_tile_size);
     m_ram_cache.visit([&should_refine](const tile_types::TileQuad& quad) {
         return should_refine(quad.id);
     });
+    m_ram_cache.set_capacity(m_ram_quad_limit);
     m_ram_cache.purge();
+    update_stats();
 }
 
 void Scheduler::persist_tiles()
 {
-    const auto base_path = disk_cache_path();
-    std::filesystem::remove_all(base_path);
-    std::filesystem::create_directories(base_path);
-
-    TileId2DataMap ortho_tiles;
-    ortho_tiles.reserve(m_ram_cache.n_cached_objects() * 4llu);
-    TileId2DataMap height_tiles;
-    height_tiles.reserve(m_ram_cache.n_cached_objects() * 4llu);
-
-    m_ram_cache.visit([&ortho_tiles, &height_tiles](const tile_types::TileQuad& quad) {
-        for (unsigned i = 0; i < quad.n_tiles; ++i) {
-            const auto& tile = quad.tiles[i];
-            if (tile.ortho)
-                ortho_tiles[tile.id] = tile.ortho;
-            if (tile.height)
-                height_tiles[tile.id] = tile.height;
-        }
-        return true;
-    });
-
-    const auto height_path = base_path / "height.alp";
-    qDebug("writing tile cache to %s", height_path.c_str());
-    utils::write_tile_id_2_data_map(height_tiles, height_path);
-
-    const auto ortho_path = base_path / "ortho.alp";
-    qDebug("writing tile cache to %s", ortho_path.c_str());
-    utils::write_tile_id_2_data_map(ortho_tiles, ortho_path);
+    try {
+        const auto start = std::chrono::steady_clock::now();
+        m_ram_cache.write_to_disk(disk_cache_path());
+        const auto diff = std::chrono::steady_clock::now() - start;
+        if (diff > std::chrono::milliseconds(50))
+            fmt::println(stderr, "Scheduler::persist_tiles took {} for {} quads.", std::chrono::duration_cast<std::chrono::milliseconds>(diff), m_ram_cache.n_cached_objects());
+    } catch (const std::runtime_error& e) {
+        qDebug("Writing tiles to disk into %s failed: %s. Removing all files.", disk_cache_path().c_str(), e.what());
+        std::filesystem::remove_all(disk_cache_path());
+    }
 }
 
 void Scheduler::schedule_update()
@@ -213,72 +250,45 @@ void Scheduler::schedule_persist()
     }
 }
 
+void Scheduler::update_stats()
+{
+    m_statistics.n_tiles_in_ram_cache = m_ram_cache.n_cached_objects();
+    m_statistics.n_tiles_in_gpu_cache = m_gpu_cached.n_cached_objects();
+    emit statistics_updated(m_statistics);
+}
+
 void Scheduler::read_disk_cache()
 {
-    const auto base_path = disk_cache_path();
-//    qDebug("reading disk cache from: %s", base_path.c_str());
-    auto ortho_tiles = utils::read_tile_id_2_data_map(base_path / "ortho.alp");
-    auto height_tiles = utils::read_tile_id_2_data_map(base_path / "height.alp");
-    if (height_tiles.empty() || ortho_tiles.empty()) {
-        height_tiles = {};
-        ortho_tiles = {};
+    try {
+        m_ram_cache.read_from_disk(disk_cache_path());
+        update_stats();
+    } catch (const std::runtime_error& e) {
+        qDebug("Reading tiles from disk cache (%s) failed: \n%s\nRemoving all files.", disk_cache_path().c_str(), e.what());
+        std::filesystem::remove_all(disk_cache_path());
     }
-    std::unordered_map<tile::Id, tile_types::LayeredTile, tile::Id::Hasher> layered_tiles;
-    layered_tiles.reserve(ortho_tiles.size());
-    for (const auto& v : ortho_tiles) {
-        const auto& id = v.first;
-        const auto& ortho = v.second;
-        if (!height_tiles.contains(id)) {
-            qWarning("inconsistent cache. missing id in height tiles");
-            return;
-        }
-        const auto& height = height_tiles.at(id);
-        layered_tiles[id] = tile_types::LayeredTile { id, ortho, height };
-    }
-
-    std::unordered_map<tile::Id, tile_types::TileQuad, tile::Id::Hasher> quads;
-    for (const auto& v : layered_tiles) {
-        auto& quad = quads[v.first.parent()];
-        if (quad.n_tiles >= 4) {
-            qWarning("inconsistent cache. quad.n_tiles >= 4");
-            return;
-        }
-        quad.id = v.first.parent();
-        quad.tiles[quad.n_tiles] = v.second;
-        ++quad.n_tiles;
-    }
-
-    std::vector<tile_types::TileQuad> quads_vector;
-    quads_vector.reserve(quads.size());
-    std::transform(quads.cbegin(), quads.cend(), std::back_inserter(quads_vector), [this](const auto& pair) {
-        tile_types::TileQuad quad = pair.second;
-        const auto required_children = quad.id.children();
-        std::unordered_set<tile::Id, tile::Id::Hasher> missing_children = { required_children.begin(), required_children.end() };
-        for (unsigned i = 0; i < quad.n_tiles; ++i) {
-            missing_children.erase(quad.tiles[i].id);
-        }
-        for (const auto& missing_id : missing_children) {
-            quad.tiles[quad.n_tiles].id = missing_id;
-            quad.tiles[quad.n_tiles].ortho = m_default_ortho_tile;
-            quad.tiles[quad.n_tiles].height = m_default_height_tile;
-            quad.n_tiles++;
-        }
-        return quad;
-    });
-    receive_quads(quads_vector);
 }
 
 std::vector<tile::Id> Scheduler::tiles_for_current_camera_position() const
 {
     std::vector<tile::Id> all_inner_nodes;
     const auto all_leaves = quad_tree::onTheFlyTraverse(
-        tile::Id { 0, { 0, 0 } },
-        tile_scheduler::utils::refineFunctor(m_current_camera, m_aabb_decorator, m_permissible_screen_space_error, m_ortho_tile_size),
-        [&all_inner_nodes](const tile::Id& v) { all_inner_nodes.push_back(v); return v.children(); });
+        tile::Id{0, {0, 0}},
+        tile_scheduler::utils::refineFunctor(m_current_camera,
+                                             m_aabb_decorator,
+                                             m_permissible_screen_space_error,
+                                             m_ortho_tile_size),
+        [&all_inner_nodes](const tile::Id &v) {
+            all_inner_nodes.push_back(v);
+            return v.children();
+        });
 
-    //    all_inner_nodes.reserve(all_inner_nodes.size() + all_leaves.size());
-    //    std::copy(all_leaves.begin(), all_leaves.end(), std::back_inserter(all_inner_nodes));
+    // not adding leaves, because they we will be fetching quads, which also fetch their children
     return all_inner_nodes;
+}
+
+void Scheduler::set_retirement_age_for_tile_cache(unsigned int new_retirement_age_for_tile_cache)
+{
+    m_retirement_age_for_tile_cache = new_retirement_age_for_tile_cache;
 }
 
 unsigned int Scheduler::persist_timeout() const
@@ -325,7 +335,9 @@ QByteArray Scheduler::black_png_tile(unsigned size)
 
 std::filesystem::path Scheduler::disk_cache_path()
 {
-    return QStandardPaths::writableLocation(QStandardPaths::CacheLocation).toStdString() + "/tile_cache";
+    const auto base_path = std::filesystem::path(QStandardPaths::writableLocation(QStandardPaths::CacheLocation).toStdString());
+    std::filesystem::create_directories(base_path);
+    return  base_path / "tile_cache";
 }
 
 void Scheduler::set_purge_timeout(unsigned int new_purge_timeout)
@@ -341,13 +353,11 @@ void Scheduler::set_purge_timeout(unsigned int new_purge_timeout)
 void Scheduler::set_ram_quad_limit(unsigned int new_ram_quad_limit)
 {
     m_ram_quad_limit = new_ram_quad_limit;
-    m_ram_cache.set_capacity(new_ram_quad_limit);
 }
 
 void Scheduler::set_gpu_quad_limit(unsigned int new_gpu_quad_limit)
 {
     m_gpu_quad_limit = new_gpu_quad_limit;
-    m_gpu_cached.set_capacity(m_gpu_quad_limit);
 }
 
 void Scheduler::set_aabb_decorator(const utils::AabbDecoratorPtr& new_aabb_decorator)

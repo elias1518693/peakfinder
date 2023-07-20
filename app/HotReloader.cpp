@@ -16,6 +16,27 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#include "utils.h"
+#include "HotReloader.h"
 
+#include <QFileSystemWatcher>
+#include <QQmlApplicationEngine>
 
+HotReloader::HotReloader(QQmlApplicationEngine* engine, QString directory, QObject* parent)
+    : m_engine(engine)
+    , QObject { parent }
+{
+    m_watcher = new QFileSystemWatcher(this);
+    directory.replace("file:/", "");
+    m_watcher->addPath(directory);
+    qDebug("watching %s", directory.toStdString().c_str());
+
+    connect(m_watcher, &QFileSystemWatcher::directoryChanged, this, [this, &engine](const QString& path) {
+        qDebug("watched_source_changed");
+        emit watched_source_changed();
+    });
+}
+
+void HotReloader::clear_cache()
+{
+    m_engine->clearComponentCache();
+}

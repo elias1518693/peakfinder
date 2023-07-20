@@ -41,28 +41,19 @@ static const char* const debugFragmentShaderSource = R"(
 ShaderManager::ShaderManager()
 {
     m_tile_program = std::make_unique<ShaderProgram>(
-        ShaderProgram::Files({"gl_shaders/tile.vert"}),
-        ShaderProgram::Files({"gl_shaders/atmosphere_implementation.frag", "gl_shaders/tile.frag"}));
+        ShaderProgram::Files({ "tile.vert" }),
+        ShaderProgram::Files({ "atmosphere_implementation.frag", "tile.frag" }));
     m_debug_program = std::make_unique<ShaderProgram>(debugVertexShaderSource, debugFragmentShaderSource);
     m_screen_quad_program = std::make_unique<ShaderProgram>(
-        ShaderProgram::Files({"gl_shaders/screen_pass.vert"}),
-        ShaderProgram::Files({"gl_shaders/screen_copy.frag"}));
+        ShaderProgram::Files({ "screen_pass.vert" }),
+        ShaderProgram::Files({ "screen_copy.frag" }));
     m_atmosphere_bg_program = std::make_unique<ShaderProgram>(
-        ShaderProgram::Files({"gl_shaders/screen_pass.vert"}),
-        ShaderProgram::Files({"gl_shaders/atmosphere_implementation.frag", "gl_shaders/atmosphere_bg.frag"}));
+        ShaderProgram::Files({ "screen_pass.vert" }),
+        ShaderProgram::Files({ "atmosphere_implementation.frag", "atmosphere_bg.frag" }));
     m_depth_program
-        = std::make_unique<ShaderProgram>(ShaderProgram::Files({"gl_shaders/tile.vert"}),
-                                          ShaderProgram::Files({"gl_shaders/encoder.glsl",
-                                                                "gl_shaders/depth.frag"}));
-    m_panorama_program = std::make_unique<ShaderProgram>(
-                ShaderProgram::Files({"gl_shaders/panorama.vert"}),
-                ShaderProgram::Files({"gl_shaders/panorama.frag"}));
-    m_sobel_program = std::make_unique<ShaderProgram>(
-                ShaderProgram::Files({"gl_shaders/screen_pass.vert"}),
-                ShaderProgram::Files({"gl_shaders/sobel.frag"}));
-    m_cylinder_program = std::make_unique<ShaderProgram>(
-                ShaderProgram::Files({"gl_shaders/panorama.vert"}),
-                ShaderProgram::Files({"gl_shaders/cylinder.frag"}));
+        = std::make_unique<ShaderProgram>(ShaderProgram::Files({ "tile.vert" }),
+            ShaderProgram::Files({ "encoder.glsl",
+                "depth.frag" }));
 
     m_program_list.push_back(m_tile_program.get());
     m_program_list.push_back(m_debug_program.get());

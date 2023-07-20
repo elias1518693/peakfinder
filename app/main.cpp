@@ -23,8 +23,10 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QLoggingCategory>
+#include <QNetworkInformation>
 #include <QOpenGLContext>
 #include <QQmlApplicationEngine>
+#include <QQmlContext>
 #include <QQmlEngine>
 #include <QQuickStyle>
 #include <QQuickView>
@@ -35,6 +37,7 @@
 #include <QTranslator>
 
 #include "GnssInformation.h"
+#include "HotReloader.h"
 #include "RenderThreadNotifier.h"
 #include "TerrainRendererItem.h"
 #include "nucleus/map_label/CameraTransformationProxyModel.h"
@@ -45,11 +48,13 @@ int main(int argc, char **argv)
     //    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::Floor);
     QQuickWindow::setGraphicsApi(QSGRendererInterface::GraphicsApi::OpenGLRhi);
     QGuiApplication app(argc, argv);
-    QQuickStyle::setStyle("Material");
+    QCoreApplication::setOrganizationName("AlpineMaps.org");
+    QCoreApplication::setApplicationName("AlpineApp");
+    QNetworkInformation::loadDefaultBackend(); // load here, so it sits on the correct thread.
 
     //    QLoggingCategory::setFilterRules("*.debug=true\n"
     //                                     "qt.qpa.fonts=true");
-    //// output qrc files:
+    // output qrc files:
     //    QDirIterator it(":", QDirIterator::Subdirectories);
     //    while (it.hasNext()) {
     //        qDebug() << it.next();
@@ -106,8 +111,11 @@ int main(int argc, char **argv)
 
     QQmlApplicationEngine engine;
 
+    HotReloader hotreloader(&engine, ALP_QML_SOURCE_DIR);
+    engine.rootContext()->setContextProperty("_hotreloader", &hotreloader);
+    engine.rootContext()->setContextProperty("_qmlPath", ALP_QML_SOURCE_DIR);
+
     RenderThreadNotifier::instance();
-    const QUrl url(u"qrc:/app/main.qml"_qs);
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreated,
         &app, [](QObject* obj, const QUrl& objUrl) {
@@ -117,14 +125,17 @@ int main(int argc, char **argv)
             }
         },
         Qt::QueuedConnection);
-    engine.load(url);
+    engine.load(QUrl(ALP_QML_SOURCE_DIR "main_loader.qml"));
     QQuickWindow* root_window = dynamic_cast<QQuickWindow*>(engine.rootObjects().first());
     if (root_window == nullptr) {
         qDebug() << "root window not created!";
         return 1;
     }
+
+#if (defined(__linux) && !defined(__ANDROID__)) || defined(_WIN32) || defined(_WIN64)
     root_window->showMaximized();
-    //root_window->showFullScreen();
+#endif
+
     RenderThreadNotifier::instance()->set_root_window(root_window);
 
     return app.exec();

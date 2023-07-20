@@ -41,11 +41,24 @@ void UnittestGlWindow::initializeGL()
     });
     logger.startLogging(QOpenGLDebugLogger::SynchronousLogging);
 
-    int result = Catch::Session().run(m_argc, m_argv);
+#ifdef __ANDROID__
+    std::vector<char*> argv_2;
+    for (int i = 0; i < m_argc; ++i) {
+        argv_2.push_back(m_argv[i]);
+    }
+    std::array<char, 20> logcat_switch = {"-o %debug"};
+    argv_2.push_back(logcat_switch.data());
+    int argc_2 = m_argc + 1;
+    int result = Catch::Session().run( argc_2, argv_2.data() );
+#else
+    int result = Catch::Session().run( m_argc, m_argv );
+#endif
     std::fflush(stdout);
 
     if (result != 0)
         exit(result);
 
-    QTimer::singleShot(0, QGuiApplication::instance(), &QCoreApplication::quit);
+#ifndef __EMSCRIPTEN__
+    QTimer::singleShot(0, QGuiApplication::instance(), &QCoreApplication::quit); // memory problems on webassembly and qt 6.5.1
+#endif
 }

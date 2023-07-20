@@ -92,12 +92,22 @@ QQuickFramebufferObject::Renderer* TerrainRendererItem::createRenderer() const
      connect(this, &TerrainRendererItem::process_image, r->controller()->render_window(), &nucleus::AbstractRenderWindow::process_image);
 
     auto* const tile_scheduler = r->controller()->tile_scheduler();
-    connect(this, &TerrainRendererItem::render_quality_changed, r->controller()->tile_scheduler(), [=](float new_render_quality) {
-        const auto permissible_error = 2.0f / new_render_quality;
+    connect(this, &TerrainRendererItem::render_quality_changed, tile_scheduler, [=](float new_render_quality) {
+        const auto permissible_error = 1.0f / new_render_quality;
         tile_scheduler->set_permissible_screen_space_error(permissible_error);
     });
+    connect(this, &TerrainRendererItem::tile_cache_size_changed, tile_scheduler, &nucleus::tile_scheduler::Scheduler::set_ram_quad_limit);
+    connect(tile_scheduler, &nucleus::tile_scheduler::Scheduler::quads_requested, this, [this](const std::vector<tile::Id>& ids) {
+        const_cast<TerrainRendererItem*>(this)->set_queued_tiles(ids.size());
+    });
+    connect(tile_scheduler, &nucleus::tile_scheduler::Scheduler::quad_received, this, [this]() {
+        const_cast<TerrainRendererItem*>(this)->set_queued_tiles(std::max(this->queued_tiles(), 1u) - 1);
+    });
+    connect(tile_scheduler, &nucleus::tile_scheduler::Scheduler::statistics_updated, this, [this](const nucleus::tile_scheduler::Scheduler::Statistics& stats) {
+        const_cast<TerrainRendererItem*>(this)->set_cached_tiles(stats.n_tiles_in_ram_cache);
+    });
 
-    connect(r->controller()->tile_scheduler(), &nucleus::tile_scheduler::Scheduler::gpu_quads_updated, RenderThreadNotifier::instance(), &RenderThreadNotifier::notify);
+    connect(tile_scheduler, &nucleus::tile_scheduler::Scheduler::gpu_quads_updated, RenderThreadNotifier::instance(), &RenderThreadNotifier::notify);
     return r;
 }
 
@@ -287,6 +297,19 @@ void TerrainRendererItem::set_camera_operation_centre_visibility(bool new_camera
     emit camera_operation_centre_visibility_changed();
 }
 
+float TerrainRendererItem::camera_operation_centre_distance() const
+{
+    return m_camera_operation_centre_distance;
+}
+
+void TerrainRendererItem::set_camera_operation_centre_distance(float new_camera_operation_centre_distance)
+{
+    if (m_camera_operation_centre_distance == new_camera_operation_centre_distance)
+        return;
+    m_camera_operation_centre_distance = new_camera_operation_centre_distance;
+    emit camera_operation_centre_distance_changed();
+}
+
 float TerrainRendererItem::render_quality() const
 {
     return m_render_quality;
@@ -301,28 +324,54 @@ void TerrainRendererItem::set_render_quality(float new_render_quality)
     schedule_update();
 }
 
-void TerrainRendererItem::load_image(QString path)
+unsigned int TerrainRendererItem::in_flight_tiles() const
 {
-    QImageReader reader(path);
-    reader.setAutoTransform(true);
-    reader.setAllocationLimit(2000);
-    const QImage image = reader.read();
-    if (image.isNull()) {
-        qWarning() << reader.errorString();
+    return m_in_flight_tiles;
+}
+
+void TerrainRendererItem::set_in_flight_tiles(unsigned int new_in_flight_tiles)
+{
+    if (m_in_flight_tiles == new_in_flight_tiles)
         return;
-    }
-    std::string test=path.toStdString();
-    std::ifstream istream(test.c_str(), std::ifstream::binary);
+    m_in_flight_tiles = new_in_flight_tiles;
+    emit in_flight_tiles_changed(m_in_flight_tiles);
+}
 
-    // parse image EXIF and XMP metadata
-    TinyEXIF::EXIFInfo imageEXIF(istream);
+unsigned int TerrainRendererItem::queued_tiles() const
+{
+    return m_queued_tiles;
+}
 
-        std::cout
-            << "Image Description " << (imageEXIF.ImageWidth/imageEXIF.XResolution) * 25.4<< "\n"
-            << "Image Resolution " << imageEXIF.ImageWidth << "x" << std::to_string(imageEXIF.XResolution) << " pixels\n"
-            << "Camera Model " << imageEXIF.Make << " - " << imageEXIF.Model << "\n"
-            << "Focal Length " << imageEXIF.FocalLength << " mm" << std::endl;
+void TerrainRendererItem::set_queued_tiles(unsigned int new_queued_tiles)
+{
+    if (m_queued_tiles == new_queued_tiles)
+        return;
+    m_queued_tiles = new_queued_tiles;
+    emit queued_tiles_changed(m_queued_tiles);
+}
 
-    emit process_image(image);
-    //RenderThreadNotifier::instance()->notify();
+unsigned int TerrainRendererItem::cached_tiles() const
+{
+    return m_cached_tiles;
+}
+
+void TerrainRendererItem::set_cached_tiles(unsigned int new_cached_tiles)
+{
+    if (m_cached_tiles == new_cached_tiles)
+        return;
+    m_cached_tiles = new_cached_tiles;
+    emit cached_tiles_changed(m_cached_tiles);
+}
+
+unsigned int TerrainRendererItem::tile_cache_size() const
+{
+    return m_tile_cache_size;
+}
+
+void TerrainRendererItem::set_tile_cache_size(unsigned int new_tile_cache_size)
+{
+    if (m_tile_cache_size == new_tile_cache_size)
+        return;
+    m_tile_cache_size = new_tile_cache_size;
+    emit tile_cache_size_changed(m_tile_cache_size);
 }

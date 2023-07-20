@@ -32,15 +32,40 @@
 #include "unittests/catch2_helpers.h"
 #include "unittests/test_helpers.h"
 
+using nucleus::tile_scheduler::Scheduler;
+using namespace nucleus::tile_scheduler::tile_types;
+
 namespace {
 
-std::unique_ptr<nucleus::tile_scheduler::Scheduler> scheduler_with_disk_cache()
+std::unique_ptr<Scheduler> scheduler_with_true_heights()
 {
-    static auto ortho_tile = nucleus::tile_scheduler::Scheduler::white_jpeg_tile(256);
-    static auto height_tile = nucleus::tile_scheduler::Scheduler::black_png_tile(64);
+    static auto ortho_tile = Scheduler::white_jpeg_tile(256);
+    static auto height_tile = Scheduler::black_png_tile(64);
 
-    auto scheduler = std::make_unique<nucleus::tile_scheduler::Scheduler>(ortho_tile, height_tile);
-    QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::quads_requested);
+    auto scheduler = std::make_unique<Scheduler>(ortho_tile, height_tile);
+    QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
+
+    QFile file(":/map/height_data.atb");
+    const auto open = file.open(QIODeviceBase::OpenModeFlag::ReadOnly);
+    assert(open);
+    const QByteArray data = file.readAll();
+    const auto decorator = nucleus::tile_scheduler::utils::AabbDecorator::make(
+        TileHeights::deserialise(data));
+    scheduler->set_aabb_decorator(decorator);
+    scheduler->set_update_timeout(1);
+    scheduler->set_enabled(true);
+    spy.wait(2); // wait for quad requests triggered by set_enabled
+    REQUIRE(spy.size() == 1);
+    return scheduler;
+}
+
+std::unique_ptr<Scheduler> default_scheduler()
+{
+    static auto ortho_tile = Scheduler::white_jpeg_tile(256);
+    static auto height_tile = Scheduler::black_png_tile(64);
+
+    auto scheduler = std::make_unique<Scheduler>(ortho_tile, height_tile);
+    QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
     TileHeights h;
     h.emplace({ 0, { 0, 0 } }, { 100, 4000 });
     scheduler->set_aabb_decorator(nucleus::tile_scheduler::utils::AabbDecorator::make(std::move(h)));
@@ -51,15 +76,17 @@ std::unique_ptr<nucleus::tile_scheduler::Scheduler> scheduler_with_disk_cache()
     return scheduler;
 }
 
-std::unique_ptr<nucleus::tile_scheduler::Scheduler> default_scheduler()
+std::unique_ptr<Scheduler> scheduler_with_disk_cache()
 {
-    std::filesystem::remove_all(nucleus::tile_scheduler::Scheduler::disk_cache_path());
-    return scheduler_with_disk_cache();
+    auto sch = default_scheduler();
+    sch->read_disk_cache();
+    return sch;
 }
-std::unique_ptr<nucleus::tile_scheduler::Scheduler> scheduler_with_aabb()
+
+std::unique_ptr<Scheduler> scheduler_with_aabb()
 {
-    std::filesystem::remove_all(nucleus::tile_scheduler::Scheduler::disk_cache_path());
-    auto scheduler = std::make_unique<nucleus::tile_scheduler::Scheduler>();
+    std::filesystem::remove_all(Scheduler::disk_cache_path());
+    auto scheduler = std::make_unique<Scheduler>();
     TileHeights h;
     h.emplace({ 0, { 0, 0 } }, { 100, 4000 });
     scheduler->set_aabb_decorator(nucleus::tile_scheduler::utils::AabbDecorator::make(std::move(h)));
@@ -87,7 +114,7 @@ std::pair<QByteArray, QByteArray> example_tile_data()
     return std::make_pair(ortho_bytes, height_bytes);
 }
 
-nucleus::tile_scheduler::tile_types::TileQuad example_tile_quad_for(const tile::Id& id, unsigned n_children = 4)
+nucleus::tile_scheduler::tile_types::TileQuad example_tile_quad_for(const tile::Id& id, unsigned n_children = 4, NetworkInfo::Status status = NetworkInfo::Status::Good)
 {
     const auto children = id.children();
     REQUIRE(n_children <= 4);
@@ -97,8 +124,10 @@ nucleus::tile_scheduler::tile_types::TileQuad example_tile_quad_for(const tile::
     const auto example_data = example_tile_data();
     for (unsigned i = 0; i < n_children; ++i) {
         cpu_quad.tiles[i].id = children[i];
-        cpu_quad.tiles[i].ortho = std::make_shared<const QByteArray>(example_data.first);
-        cpu_quad.tiles[i].height = std::make_shared<const QByteArray>(example_data.second);
+        cpu_quad.tiles[i].ortho = std::make_shared<QByteArray>(example_data.first);
+        cpu_quad.tiles[i].height = std::make_shared<QByteArray>(example_data.second);
+        cpu_quad.tiles[i].network_info.status = status;
+        cpu_quad.tiles[i].network_info.timestamp = nucleus::tile_scheduler::utils::time_since_epoch();
     }
     return cpu_quad;
 }
@@ -152,7 +181,7 @@ std::vector<nucleus::tile_scheduler::tile_types::TileQuad> example_quads_many()
 {
     static std::vector<nucleus::tile_scheduler::tile_types::TileQuad> retval = []() {
         auto scheduler = default_scheduler();
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::quads_requested);
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
         auto camera = nucleus::camera::stored_positions::grossglockner();
         camera.set_viewport_size({ 3840, 2160 });
         scheduler->update_camera(camera);
@@ -177,7 +206,7 @@ constexpr auto timing_multiplicator = 10;
 constexpr auto timing_multiplicator = 1;
 #endif
 
-}
+} // namespace
 
 TEST_CASE("nucleus/tile_scheduler/Scheduler")
 {
@@ -187,7 +216,7 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         // disabled by default (enable by signal, in order to prevent a race with opengl)
         scheduler->set_update_timeout(1);
 
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::quads_requested);
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
         spy.wait(2);
         CHECK(spy.empty());
@@ -203,7 +232,7 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         scheduler->set_enabled(true);
         scheduler->set_update_timeout(5 * timing_multiplicator);
 
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::quads_requested);
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
         scheduler->update_camera(nucleus::camera::stored_positions::oestl_hochgrubach_spitze());
         test_helpers::process_events_for(2 * timing_multiplicator);
@@ -217,7 +246,7 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
     {
         auto scheduler = default_scheduler();
         scheduler->set_update_timeout(6 * timing_multiplicator);
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::quads_requested);
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
         test_helpers::process_events_for(2 * timing_multiplicator);
         scheduler->update_camera(nucleus::camera::stored_positions::oestl_hochgrubach_spitze());
@@ -233,7 +262,7 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
     SECTION("quads are being requested")
     {
         auto scheduler = default_scheduler();
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::quads_requested);
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
         spy.wait(2);
         REQUIRE(spy.size() == 1);
@@ -248,18 +277,40 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 1, { 1, 1 } }) != quads.end());
         CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 2, { 2, 2 } }) != quads.end());
         CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 3, { 4, 5 } }) != quads.end());
-        CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 4, { 8, 10 } }) != quads.end());
+        CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id{4, {8, 10}}) != quads.end());
+
+        // currently we have tiles up until zoom level 18 for the depth tiles
+        // so max quad tile level is 17.
+        CHECK(std::find_if(quads.cbegin(),
+                           quads.cend(),
+                           [](const tile::Id &id) { return id.zoom_level == 17; })
+              != quads.end());
+        CHECK(std::find_if(quads.cbegin(),
+                           quads.cend(),
+                           [](const tile::Id &id) { return id.zoom_level == 18; })
+              == quads.end());
+    }
+
+    SECTION("quads are not requested if there is no network")
+    {
+        auto scheduler = default_scheduler();
+        scheduler->set_network_reachability(QNetworkInformation::Reachability::Disconnected);
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
+        scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
+        spy.wait(2);
+        REQUIRE(spy.size() == 0);
+        scheduler->set_network_reachability(QNetworkInformation::Reachability::Online);
+        spy.wait(2);
+        REQUIRE(spy.size() == 1);
     }
 
     SECTION("delivered quads are not requested again")
     {
         auto scheduler = default_scheduler();
-        scheduler->receive_quads({
-            example_tile_quad_for(tile::Id { 0, { 0, 0 } }),
-            example_tile_quad_for(tile::Id { 1, { 1, 1 } }),
-            example_tile_quad_for(tile::Id { 2, { 2, 2 } }),
-        });
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::quads_requested);
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 0, { 0, 0 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 1 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 2, 2 } }));
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
         spy.wait(2);
         REQUIRE(spy.size() == 1);
@@ -277,16 +328,68 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 4, { 8, 10 } }) != quads.end());
     }
 
+    SECTION("network failed tiles are ignored, not found tiles are not ignored")
+    {
+        auto scheduler = default_scheduler();
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 0, { 0, 0 } }, 4, NetworkInfo::Status::NotFound));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 1 } }, 4, NetworkInfo::Status::NetworkError));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 2, 2 } }, 4, NetworkInfo::Status::NotFound));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 3, { 4, 5 } }, 4, NetworkInfo::Status::NetworkError));
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
+        scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
+        spy.wait(2);
+        REQUIRE(spy.size() == 1);
+        const auto quads = spy.constFirst().constFirst().value<std::vector<tile::Id>>();
+        REQUIRE(quads.size() >= 5);
+        // high level tiles that contain stephansdom
+        // according to https://www.maptiler.com/google-maps-coordinates-tile-bounds-projection/#4/6.45/50.74
+        CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 0, { 0, 0 } }) == quads.end());
+#ifndef __EMSCRIPTEN__
+        // fails because webassembly doesn't always see 404 and therefore we need a workaround in scheduler->receive_quad, which fails the test.
+        CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 1, { 1, 1 } }) != quads.end());
+        CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 3, { 4, 5 } }) != quads.end());
+#endif
+        CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 2, { 2, 2 } }) == quads.end());
+        CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 4, { 8, 10 } }) != quads.end());
+    }
+
+    SECTION("delivered tiles are requested again after they get too old")
+    {
+        auto scheduler = default_scheduler();
+        scheduler->set_retirement_age_for_tile_cache(5);
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 0, { 0, 0 } }, 4, NetworkInfo::Status::Good));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 1 } }, 4, NetworkInfo::Status::NotFound));
+
+        QSignalSpy spy(scheduler.get(), &Scheduler::quads_requested);
+        scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
+        scheduler->send_quad_requests();
+        {
+            REQUIRE(spy.size() == 1);
+            const auto quads = spy.constFirst().constFirst().value<std::vector<tile::Id>>();
+            // not found, as already in cache
+            CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 0, { 0, 0 } }) == quads.end());
+            CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 1, { 1, 1 } }) == quads.end());
+        }
+
+        QThread::msleep(10);
+        scheduler->send_quad_requests();
+        {
+            REQUIRE(spy.size() == 2);
+            const auto quads = spy.constLast().constFirst().value<std::vector<tile::Id>>();
+            // found, as cache version is to old and should be updated
+            CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 0, { 0, 0 } }) != quads.end());
+            CHECK(std::find(quads.cbegin(), quads.cend(), tile::Id { 1, { 1, 1 } }) != quads.end());
+        }
+    }
+
     SECTION("delivered quads are sent on to the gpu (with no repeat, only the ones in the tree)")
     {
         auto scheduler = default_scheduler();
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::gpu_quads_updated);
-        scheduler->receive_quads({
-            example_tile_quad_for(tile::Id { 0, { 0, 0 } }),
-            example_tile_quad_for(tile::Id { 1, { 1, 1 } }),
-            example_tile_quad_for(tile::Id { 2, { 2, 2 } }),
-            example_tile_quad_for(tile::Id { 4, { 8, 10 } }),
-        });
+        QSignalSpy spy(scheduler.get(), &Scheduler::gpu_quads_updated);
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 0, { 0, 0 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 1 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 2, 2 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 4, { 8, 10 } }));
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
         spy.wait(2);
         REQUIRE(spy.size() == 1);
@@ -296,12 +399,10 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         CHECK(gpu_quads[1].id == tile::Id { 1, { 1, 1 } });
         CHECK(gpu_quads[2].id == tile::Id { 2, { 2, 2 } });
 
-        scheduler->receive_quads({
-            example_tile_quad_for(tile::Id { 3, { 4, 5 } }),
-            example_tile_quad_for(tile::Id { 5, { 17, 20 } }),
-            example_tile_quad_for(tile::Id { 6, { 34, 41 } }),
-            example_tile_quad_for(tile::Id { 7, { 69, 83 } }),
-        });
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 3, { 4, 5 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 5, { 17, 20 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 6, { 34, 41 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 7, { 69, 83 } }));
         spy.wait(2);
         REQUIRE(spy.size() == 2);
         const auto new_gpu_quads = spy[1].front().value<std::vector<nucleus::tile_scheduler::tile_types::GpuTileQuad>>();
@@ -323,8 +424,8 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         };
 
         auto scheduler = default_scheduler();
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::gpu_quads_updated);
-        scheduler->receive_quads({
+        QSignalSpy spy(scheduler.get(), &Scheduler::gpu_quads_updated);
+        scheduler->receive_quad({
             example_tile_quad_for({ 0, { 0, 0 } }, 4),
         });
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
@@ -340,10 +441,10 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         const auto wsmax = nucleus::srs::tile_bounds({ 0, { 0, 0 } }).max.x; // world space max
         const auto wsmin = nucleus::srs::tile_bounds({ 0, { 0, 0 } }).min.x;
 
-        compare_bounds(gpu_quads[0].tiles[0].bounds, tile::SrsAndHeightBounds { { wsmin, wsmin, 100 }, { 0, 0, 46367.813102 } });
-        compare_bounds(gpu_quads[0].tiles[1].bounds, tile::SrsAndHeightBounds { { 0, wsmin, 100 }, { wsmax, 0, 46367.813102 } });
-        compare_bounds(gpu_quads[0].tiles[2].bounds, tile::SrsAndHeightBounds { { wsmin, 0, 100 }, { 0, wsmax, 46367.813102 } });
-        compare_bounds(gpu_quads[0].tiles[3].bounds, tile::SrsAndHeightBounds { { 0, 0, 100 }, { wsmax, wsmax, 46367.813102 } });
+        compare_bounds(gpu_quads[0].tiles[0].bounds, tile::SrsAndHeightBounds { { wsmin, wsmin, 100 - 0.5 }, { 0, 0, 46367.813102 } });
+        compare_bounds(gpu_quads[0].tiles[1].bounds, tile::SrsAndHeightBounds { { 0, wsmin, 100 - 0.5 }, { wsmax, 0, 46367.813102 } });
+        compare_bounds(gpu_quads[0].tiles[2].bounds, tile::SrsAndHeightBounds { { wsmin, 0, 100 - 0.5 }, { 0, wsmax, 46367.813102 } });
+        compare_bounds(gpu_quads[0].tiles[3].bounds, tile::SrsAndHeightBounds { { 0, 0, 100 - 0.5 }, { wsmax, wsmax, 46367.813102 } });
 
         for (auto i = 0; i < 4; ++i) {
             REQUIRE(gpu_quads[0].tiles[i].ortho);
@@ -358,16 +459,14 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
     SECTION("incomplete tiles are replaced with default ones, when sending to gpu")
     {
         auto scheduler = default_scheduler();
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::gpu_quads_updated);
-        auto quads = example_tile_quad_for({ 0, { 0, 0 } }, 3);
-        quads.tiles[2].ortho.reset();
-        quads.tiles[2].height.reset();
-
-        scheduler->receive_quads({
-            quads,
-        });
+        QSignalSpy spy(scheduler.get(), &Scheduler::gpu_quads_updated);
+        auto quad = example_tile_quad_for({ 0, { 0, 0 } }, 4);
+        quad.tiles[2].ortho->resize(0);
+        quad.tiles[2].height->resize(0);
+        
+        scheduler->receive_quad(quad);
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
-        spy.wait(2);
+        scheduler->update_gpu_quads();
         REQUIRE(spy.size() == 1);
         const auto gpu_quads = spy.constFirst().constFirst().value<std::vector<nucleus::tile_scheduler::tile_types::GpuTileQuad>>();
         REQUIRE(gpu_quads.size() == 1);
@@ -384,8 +483,9 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
     SECTION("gpu quads are updated when serving from cache")
     {
         auto scheduler = default_scheduler();
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::gpu_quads_updated);
-        scheduler->receive_quads(example_quads_for_steffl_and_gg());
+        QSignalSpy spy(scheduler.get(), &Scheduler::gpu_quads_updated);
+        for (const auto& q : example_quads_for_steffl_and_gg())
+            scheduler->receive_quad(q);
 
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
         spy.wait(2);
@@ -400,8 +500,9 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
     {
         auto scheduler = default_scheduler();
         scheduler->set_gpu_quad_limit(17);
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::gpu_quads_updated);
-        scheduler->receive_quads(example_quads_for_steffl_and_gg());
+        QSignalSpy spy(scheduler.get(), &Scheduler::gpu_quads_updated);
+        for (const auto& q : example_quads_for_steffl_and_gg())
+            scheduler->receive_quad(q);
 
         std::unordered_set<tile::Id, tile::Id::Hasher> cached_tiles;
 
@@ -414,7 +515,10 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
             CHECK(new_quads.size() == 17);
             CHECK(deleted_quads.empty());
             nucleus::tile_scheduler::Cache<nucleus::tile_scheduler::tile_types::GpuTileQuad> test_cache;
-            test_cache.insert(new_quads);
+
+            for (const auto& q : new_quads)
+                test_cache.insert(q);
+
             auto n_tiles = 0;
             test_cache.visit([&n_tiles](const auto&) {
                 n_tiles++;
@@ -467,8 +571,9 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
     {
         auto scheduler = default_scheduler();
         scheduler->set_gpu_quad_limit(17);
-        QSignalSpy spy(scheduler.get(), &nucleus::tile_scheduler::Scheduler::gpu_quads_updated);
-        scheduler->receive_quads(example_quads_for_steffl_and_gg());
+        QSignalSpy spy(scheduler.get(), &Scheduler::gpu_quads_updated);
+        for (const auto& q : example_quads_for_steffl_and_gg())
+            scheduler->receive_quad(q);
 
         std::unordered_set<tile::Id, tile::Id::Hasher> cached_tiles;
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
@@ -490,7 +595,8 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         auto scheduler = default_scheduler();
         scheduler->set_ram_quad_limit(17);
         scheduler->set_purge_timeout(1);
-        scheduler->receive_quads(example_quads_for_steffl_and_gg());
+        for (const auto& q : example_quads_for_steffl_and_gg())
+            scheduler->receive_quad(q);
         test_helpers::process_events_for(2);
         CHECK(scheduler->ram_cache().n_cached_objects() == 17);
     }
@@ -501,7 +607,8 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         scheduler->set_ram_quad_limit(17);
         scheduler->set_purge_timeout(1);
         scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
-        scheduler->receive_quads(example_quads_for_steffl_and_gg());
+        for (const auto& q : example_quads_for_steffl_and_gg())
+            scheduler->receive_quad(q);
         test_helpers::process_events_for(2);
         CHECK(scheduler->ram_cache().n_cached_objects() == 17);
         CHECK(scheduler->ram_cache().contains({ 11, { 1117, 1337 } }));
@@ -516,17 +623,17 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         auto scheduler = default_scheduler();
         // example_quads_for_steffl_and_gg().size() == 39
         const unsigned limit = 38;
-        assert(example_quads_for_steffl_and_gg().size() > limit);
+        REQUIRE(example_quads_for_steffl_and_gg().size() > limit);
+        REQUIRE(example_quads_for_steffl_and_gg().size() == 39);
         scheduler->set_ram_quad_limit(limit);
         scheduler->set_purge_timeout(1);
-        scheduler->receive_quads(example_quads_for_steffl_and_gg());
+        for (const auto& q : example_quads_for_steffl_and_gg())
+            scheduler->receive_quad(q);
         test_helpers::process_events_for(2);
         CHECK(scheduler->ram_cache().n_cached_objects() == example_quads_for_steffl_and_gg().size());
-        scheduler->receive_quads({
-            example_tile_quad_for(tile::Id { 10, { 0, 0 } }),
-            example_tile_quad_for(tile::Id { 11, { 1, 1 } }),
-            example_tile_quad_for(tile::Id { 12, { 2, 2 } }),
-        });
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 10, { 0, 0 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 11, { 1, 1 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 12, { 2, 2 } }));
         test_helpers::process_events_for(2);
         CHECK(scheduler->ram_cache().n_cached_objects() == limit);
     }
@@ -537,75 +644,126 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler")
         scheduler->set_purge_timeout(9 * timing_multiplicator);
         scheduler->set_update_timeout(20 * timing_multiplicator); // sending quads to gpu takes long and makes tight timing impossible in debug mode
         scheduler->set_ram_quad_limit(2);
-        scheduler->receive_quads({
-            example_tile_quad_for(tile::Id { 0, { 0, 0 } }),
-            example_tile_quad_for(tile::Id { 1, { 1, 1 } }),
-            example_tile_quad_for(tile::Id { 2, { 2, 2 } }),
-        });
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 0, { 0, 0 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 1 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 2, 2 } }));
         CHECK(scheduler->ram_cache().n_cached_objects() == 3);
         test_helpers::process_events_for(3 * timing_multiplicator);
         CHECK(scheduler->ram_cache().n_cached_objects() == 3);
-        scheduler->receive_quads({
-            example_tile_quad_for(tile::Id { 1, { 0, 0 } }),
-            example_tile_quad_for(tile::Id { 1, { 1, 0 } }),
-            example_tile_quad_for(tile::Id { 2, { 2, 1 } }),
-        });
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 0, 0 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 0 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 2, 1 } }));
 
         CHECK(scheduler->ram_cache().n_cached_objects() == 6);
         test_helpers::process_events_for(3 * timing_multiplicator);
         CHECK(scheduler->ram_cache().n_cached_objects() == 6);
 
-        scheduler->receive_quads({
-            example_tile_quad_for(tile::Id { 1, { 0, 1 } }),
-            example_tile_quad_for(tile::Id { 2, { 1, 1 } }),
-            example_tile_quad_for(tile::Id { 2, { 1, 2 } }),
-        });
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 0, 1 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 1, 1 } }));
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 1, 2 } }));
         CHECK(scheduler->ram_cache().n_cached_objects() == 9);
         test_helpers::process_events_for(4 * timing_multiplicator);
         CHECK(scheduler->ram_cache().n_cached_objects() == 2);
     }
 
+    const auto check_persisted_tile = [](const auto& scheduler, const tile::Id& id) {
+        const auto example_quad = example_tile_quad_for(id);
+        REQUIRE(scheduler->ram_cache().contains(id));
+        REQUIRE(scheduler->ram_cache().peak_at(id).n_tiles == example_quad.n_tiles);
+        REQUIRE(scheduler->ram_cache().peak_at(id).id == id);
+        REQUIRE(id == example_quad.id);
+        const auto children = id.children();
+        for (unsigned i = 0; i < 4; ++i) {
+            const nucleus::tile_scheduler::tile_types::LayeredTile& child_tile = scheduler->ram_cache().peak_at(id).tiles[i];
+            CHECK(child_tile.id == children[i]);
+            CHECK(*child_tile.height == *example_quad.tiles[i].height);
+            CHECK(*child_tile.ortho == *example_quad.tiles[i].ortho);
+        }
+    };
+
+    const auto check_persited_tiles = [&check_persisted_tile](const auto& scheduler, const auto& ids) {
+        for (const auto& id : ids) {
+            check_persisted_tile(scheduler, id);
+        }
+    };
     SECTION("persisting data works")
     {
         {
             auto scheduler = default_scheduler();
-            scheduler->receive_quads({
-                example_tile_quad_for(tile::Id { 0, { 0, 0 } }),
-                example_tile_quad_for(tile::Id { 1, { 1, 1 } }),
-                example_tile_quad_for(tile::Id { 2, { 2, 2 } }),
-            });
+            scheduler->receive_quad(example_tile_quad_for(tile::Id { 0, { 0, 0 } }));
+            scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 1 } }));
+            scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 2, 2 } }));
             scheduler->persist_tiles();
         }
         auto scheduler = scheduler_with_disk_cache();
         CHECK(scheduler->ram_cache().n_cached_objects() == 3);
 
-        const auto ids = std::vector { tile::Id { 0, { 0, 0 } }, tile::Id { 1, { 1, 1 } }, tile::Id { 2, { 2, 2 } } };
-        for (const auto& id : ids) {
-            const auto example_quad = example_tile_quad_for(id);
-            REQUIRE(scheduler->ram_cache().contains(id));
-            REQUIRE(scheduler->ram_cache().peak_at(id).n_tiles == example_quad.n_tiles);
-            REQUIRE(scheduler->ram_cache().peak_at(id).id == id);
-            REQUIRE(id == example_quad.id);
-            for (unsigned i = 0; i < 4; ++i) {
-                CHECK(*scheduler->ram_cache().peak_at(id).tiles[i].height == *example_quad.tiles[i].height);
-                CHECK(*scheduler->ram_cache().peak_at(id).tiles[i].ortho == *example_quad.tiles[i].ortho);
-            }
+        check_persited_tiles(scheduler, std::vector { tile::Id { 0, { 0, 0 } }, tile::Id { 1, { 1, 1 } }, tile::Id { 2, { 2, 2 } } });
+
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 0, { 0, 0 } }).tiles[0].id == tile::Id { 1, { 0, 0 } }); // order does not matter!
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 0, { 0, 0 } }).tiles[1].id == tile::Id { 1, { 1, 0 } });
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 0, { 0, 0 } }).tiles[2].id == tile::Id { 1, { 0, 1 } });
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 0, { 0, 0 } }).tiles[3].id == tile::Id { 1, { 1, 1 } });
+
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 1, { 1, 1 } }).tiles[0].id == tile::Id { 2, { 2, 2 } });
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 1, { 1, 1 } }).tiles[1].id == tile::Id { 2, { 3, 2 } });
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 1, { 1, 1 } }).tiles[2].id == tile::Id { 2, { 2, 3 } });
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 1, { 1, 1 } }).tiles[3].id == tile::Id { 2, { 3, 3 } });
+
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 2, { 2, 2 } }).tiles[0].id == tile::Id { 3, { 4, 4 } });
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 2, { 2, 2 } }).tiles[1].id == tile::Id { 3, { 5, 4 } });
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 2, { 2, 2 } }).tiles[2].id == tile::Id { 3, { 4, 5 } });
+        CHECK(scheduler->ram_cache().peak_at(tile::Id { 2, { 2, 2 } }).tiles[3].id == tile::Id { 3, { 5, 5 } });
+        std::filesystem::remove_all(Scheduler::disk_cache_path());
+    }
+
+    SECTION("persisting data works als with itterative updates")
+    {
+        {
+            auto scheduler = default_scheduler();
+            scheduler->receive_quad(example_tile_quad_for(tile::Id { 0, { 0, 0 } }));
+            scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 1 } }));
+            scheduler->receive_quad(example_tile_quad_for(tile::Id { 2, { 2, 2 } }));
+            scheduler->persist_tiles();
         }
+        {
+            auto scheduler = scheduler_with_disk_cache();
+            CHECK(scheduler->ram_cache().n_cached_objects() == 3);
+            check_persited_tiles(scheduler, std::vector { tile::Id { 0, { 0, 0 } }, tile::Id { 1, { 1, 1 } }, tile::Id { 2, { 2, 2 } } });
+            scheduler->receive_quad(example_tile_quad_for(tile::Id { 3, { 0, 0 } }));
+            scheduler->receive_quad(example_tile_quad_for(tile::Id { 4, { 0, 1 } }));
+            scheduler->persist_tiles();
+        }
+        {
+            auto scheduler = scheduler_with_disk_cache();
+            CHECK(scheduler->ram_cache().n_cached_objects() == 5);
+            check_persited_tiles(scheduler, std::vector { tile::Id { 0, { 0, 0 } }, tile::Id { 1, { 1, 1 } }, tile::Id { 2, { 2, 2 } }, tile::Id { 3, { 0, 0 } }, tile::Id { 4, { 0, 1 } } });
+            scheduler->set_ram_quad_limit(3);
+            scheduler->update_camera(nucleus::camera::stored_positions::stephansdom());
+            scheduler->update_gpu_quads();
+            scheduler->purge_ram_cache();
+            CHECK(scheduler->ram_cache().n_cached_objects() == 3);
+            check_persited_tiles(scheduler, std::vector { tile::Id { 0, { 0, 0 } }, tile::Id { 1, { 1, 1 } }, tile::Id { 2, { 2, 2 } } });
+            scheduler->persist_tiles();
+        }
+        {
+            auto scheduler = scheduler_with_disk_cache();
+            CHECK(scheduler->ram_cache().n_cached_objects() == 3);
+            check_persited_tiles(scheduler, std::vector { tile::Id { 0, { 0, 0 } }, tile::Id { 1, { 1, 1 } }, tile::Id { 2, { 2, 2 } } });
+        }
+        std::filesystem::remove_all(Scheduler::disk_cache_path());
+    }
 
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 0, { 0, 0 } }).tiles[0].id == tile::Id { 1, { 1, 1 } }); // order does not matter!
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 0, { 0, 0 } }).tiles[1].id == tile::Id { 1, { 0, 1 } });
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 0, { 0, 0 } }).tiles[2].id == tile::Id { 1, { 1, 0 } });
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 0, { 0, 0 } }).tiles[3].id == tile::Id { 1, { 0, 0 } });
-
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 1, { 1, 1 } }).tiles[0].id == tile::Id { 2, { 3, 3 } });
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 1, { 1, 1 } }).tiles[1].id == tile::Id { 2, { 2, 3 } });
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 1, { 1, 1 } }).tiles[2].id == tile::Id { 2, { 3, 2 } });
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 1, { 1, 1 } }).tiles[3].id == tile::Id { 2, { 2, 2 } });
-
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 2, { 2, 2 } }).tiles[0].id == tile::Id { 3, { 5, 5 } });
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 2, { 2, 2 } }).tiles[1].id == tile::Id { 3, { 4, 5 } });
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 2, { 2, 2 } }).tiles[2].id == tile::Id { 3, { 4, 4 } });
-        CHECK(scheduler->ram_cache().peak_at(tile::Id { 2, { 2, 2 } }).tiles[3].id == tile::Id { 3, { 5, 4 } });
+    SECTION("notification, when a tile is received")
+    {
+        auto scheduler = default_scheduler();
+        QSignalSpy spy(scheduler.get(), &Scheduler::quad_received);
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 0, { 0, 0 } }));
+        REQUIRE(spy.size() == 1);
+        scheduler->receive_quad(example_tile_quad_for(tile::Id { 1, { 1, 1 } }));
+        REQUIRE(spy.size() == 2);
+        CHECK(spy[0][0].value<tile::Id>() == tile::Id { 0, { 0, 0 } });
+        CHECK(spy[1][0].value<tile::Id>() == tile::Id { 1, { 1, 1 } });
     }
 }
 
@@ -616,27 +774,31 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler benchmarks")
 
     BENCHMARK("construct")
     {
-        return default_scheduler();
+        return scheduler_with_true_heights();
     };
 
-    BENCHMARK("request quads")
     {
-        auto scheduler = default_scheduler();
-        scheduler->update_camera(camera);
-        scheduler->send_quad_requests();
-    };
+        auto scheduler = scheduler_with_true_heights();
+        BENCHMARK("request quads")
+        {
+            scheduler->update_camera(camera);
+            scheduler->send_quad_requests();
+        };
+    }
 
     BENCHMARK("receive " + std::to_string(example_quads_many().size()) + " quads")
     {
         auto scheduler = default_scheduler();
-        scheduler->receive_quads(example_quads_many());
+        for (const auto& q : example_quads_many())
+            scheduler->receive_quad(q);
     };
 
     BENCHMARK("receive " + std::to_string(example_quads_for_steffl_and_gg().size()) + " quads + update_gpu_quads")
     {
         auto scheduler = default_scheduler();
         scheduler->update_camera(camera);
-        scheduler->receive_quads(example_quads_for_steffl_and_gg());
+        for (const auto& q : example_quads_for_steffl_and_gg())
+            scheduler->receive_quad(q);
         // unpacking byte arrays takes long, hence only the smaller dataset
         scheduler->update_gpu_quads();
     };
@@ -645,7 +807,27 @@ TEST_CASE("nucleus/tile_scheduler/Scheduler benchmarks")
     {
         auto scheduler = default_scheduler();
         scheduler->update_camera(camera);
-        scheduler->receive_quads(example_quads_for_steffl_and_gg());
+        for (const auto& q : example_quads_for_steffl_and_gg())
+            scheduler->receive_quad(q);
         scheduler->purge_ram_cache();
     };
+
+    {
+        auto scheduler = default_scheduler();
+        scheduler->receive_quad({example_tile_quad_for({0, {0, 0}}),});
+        for (unsigned i = 1; i < 100; ++i) {
+            scheduler->receive_quad(example_tile_quad_for({ i, { 0, 0 } }));
+            scheduler->receive_quad(example_tile_quad_for({ i, { 1, 0 } }));
+            scheduler->receive_quad(example_tile_quad_for({ i, { 1, 1 } }));
+            scheduler->receive_quad(example_tile_quad_for({ i, { 0, 1 } }));
+        }
+        BENCHMARK("write cache to disk") {
+            scheduler->persist_tiles();
+        };
+    }
+
+    BENCHMARK("read cache from disk") {
+        auto scheduler = scheduler_with_disk_cache();
+    };
+    std::filesystem::remove_all(Scheduler::disk_cache_path());
 }

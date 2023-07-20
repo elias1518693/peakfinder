@@ -16,6 +16,25 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#include "utils.h"
+#pragma once
 
+#include <QObject>
 
+class QFileSystemWatcher;
+class QQmlApplicationEngine;
+
+class HotReloader : public QObject {
+    Q_OBJECT
+public:
+    explicit HotReloader(QQmlApplicationEngine* engine, QString directory, QObject* parent = nullptr);
+
+signals:
+    void watched_source_changed();
+
+public slots:
+    void clear_cache();
+
+private:
+    QFileSystemWatcher* m_watcher;
+    QQmlApplicationEngine* m_engine;
+};

@@ -17,13 +17,13 @@
  *****************************************************************************/
 
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Material
 import QtQuick.Layouts
 import Alpine
 
 Rectangle {
     id: about_root
-    color: "#88FFFFFF"
+    color: Qt.alpha(Material.backgroundColor, 0.7)
     Flickable {
         anchors {
             fill: parent
@@ -39,7 +39,7 @@ Rectangle {
             width: logo.width + Math.max(alpine_text.width, maps_text.width) + 20
             color: "#00FFFFFF"
             height: about_text.implicitHeight + logo.height + 20
-            Image { id: logo; width: 120; height: 120; source: "qrc:/icons/mascot.jpg" }
+            Image { id: logo; width: 120; height: 120; source: "icons/mascot.jpg" }
             Text {
                 id: alpine_text
                 anchors {
@@ -50,6 +50,7 @@ Rectangle {
                     bottomMargin: 0
                 }
                 text: "Alpine"
+                color: Material.primaryTextColor
                 font {
                     weight: 800
                     pixelSize: 50
@@ -65,6 +66,7 @@ Rectangle {
                     bottomMargin: 0
                 }
                 text: "Maps"
+                color: Material.primaryTextColor
                 font {
                     weight: 400
                     pixelSize: 50
@@ -78,6 +80,7 @@ Rectangle {
                     leftMargin: 0
                 }
                 text: ".org"
+                color: Material.primaryTextColor
                 font {
                     weight: 100
                     pixelSize: 30

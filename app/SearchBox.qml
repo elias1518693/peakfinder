@@ -17,7 +17,6 @@
  *****************************************************************************/
 
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import Alpine
 import QtQuick.Controls.Universal
@@ -77,7 +76,7 @@ Rectangle {
         }
 
         text: ""
-        icon.source: "qrc:/icons/search.svg"
+        icon.source: "icons/search.svg"
         background: Rectangle { color: "#00FFFFFF" }
         onClicked: {
             search_input.accepted()

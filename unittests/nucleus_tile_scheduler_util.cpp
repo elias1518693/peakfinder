@@ -20,11 +20,15 @@
 #include <QFile>
 #include <QImage>
 #include <QThread>
+#include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <nucleus/camera/Definition.h>
 
+#include "nucleus/camera/stored_positions.h"
 #include "nucleus/tile_scheduler/utils.h"
 #include "nucleus/utils/tile_conversion.h"
+#include "sherpa/quad_tree.h"
 
 using Catch::Approx;
 using namespace nucleus::tile_scheduler;
@@ -33,145 +37,173 @@ TEST_CASE("nucleus/tile_scheduler/utils/make_bounds altitude correction")
 {
     SECTION("root tile") {
         const auto bounds = utils::make_bounds(tile::Id{0, {0, 0}}, 100, 1000);
-        CHECK(bounds.min.z == Approx(100).scale(100));
+        CHECK(bounds.min.z == Approx(100 - 0.5).scale(100));
         CHECK(bounds.max.z > 1000);
     }
     SECTION("tile from equator") {
         auto bounds = utils::make_bounds(tile::Id{1, {0, 1}}, 100, 1000); // top left
-        CHECK(bounds.min.z == Approx(100).scale(100));
+        CHECK(bounds.min.z == Approx(100 - 0.5).scale(100));
         CHECK(bounds.max.z > 1000);
         bounds = utils::make_bounds(tile::Id{1, {0, 0}}, 100, 1000); // bottom left
-        CHECK(bounds.min.z == Approx(100).scale(100));
+        CHECK(bounds.min.z == Approx(100 - 0.5).scale(100));
         CHECK(bounds.max.z > 1000);
     }
 }
 
-TEST_CASE("nucleus/tile_scheduler/utils/TileId2DataMap io")
+TEST_CASE("tile_scheduler/utils/refine_functor")
 {
-    const auto base_path = std::filesystem::path("./unittests_test_files");
-    std::filesystem::remove_all(base_path);
-    std::filesystem::create_directories(base_path);
-    const auto file_name = base_path / "tile_id_2_data.alp";
+    // todo: optimise / benchmark refine functor
+    // todo: optimise / benchmark draw list generator
+    auto camera = nucleus::camera::stored_positions::stephansdom_closeup();
 
-    SECTION("interface")
-    {
-        TileId2DataMap map;
-        utils::write_tile_id_2_data_map(map, file_name);
-        const auto read_map = utils::read_tile_id_2_data_map(file_name);
-        CHECK(read_map.size() == 0);
-    }
+    QFile file(":/map/height_data.atb");
+    const auto open = file.open(QIODeviceBase::OpenModeFlag::ReadOnly);
+    assert(open);
+    const QByteArray data = file.readAll();
+    const auto decorator = nucleus::tile_scheduler::utils::AabbDecorator::make(
+        TileHeights::deserialise(data));
 
-    SECTION("missing file returns empty map")
-    {
-        const auto read_map = utils::read_tile_id_2_data_map(base_path / "missing");
-        CHECK(read_map.empty());
-    }
+    const auto refine_functor = utils::refineFunctor(camera, decorator, 1.0);
+    const auto all_leaves = quad_tree::onTheFlyTraverse(
+        tile::Id{0, {0, 0}},
+        [](const tile::Id &v) { return v.zoom_level < 6; },
+        [](const tile::Id &v) { return v.children(); });
 
-    SECTION("something written")
+    BENCHMARK("refine functor double")
     {
-        REQUIRE(!std::filesystem::exists(file_name));
-        TileId2DataMap map;
-        map[tile::Id { 23, { 44, 55 } }] = std::make_shared<QByteArray>("1\02345ABCDabcd");
-        utils::write_tile_id_2_data_map(map, file_name);
-        CHECK(std::filesystem::exists(file_name));
-        CHECK(std::filesystem::file_size(file_name) > std::string("1\02345ABCDabcd").size());
-    }
-
-    SECTION("write and read")
-    {
-        REQUIRE(!std::filesystem::exists(file_name));
-        TileId2DataMap map;
-        map[tile::Id { 23, { 44, 55 } }] = std::make_shared<QByteArray>("1\02345ABCDabcd");
-        map[tile::Id { 1, { 13, 46 } }] = std::make_shared<QByteArray>("1\02345Aabcd");
-        map[tile::Id { 2, { 13, 46 } }] = std::make_shared<QByteArray>("");
-        REQUIRE(map[tile::Id { 2, { 13, 46 } }]->size() == 0);
-        utils::write_tile_id_2_data_map(map, file_name);
-        const auto read_map = utils::read_tile_id_2_data_map(file_name);
-        REQUIRE(read_map.size() == map.size());
-        for (const auto& key_value : map) {
-            REQUIRE(read_map.contains(key_value.first));
-            CHECK(read_map.at(key_value.first) != key_value.second); // returns a different shared pointer
-            CHECK(*read_map.at(key_value.first) == *key_value.second); // bytes are correct
+        auto retval = true;
+        for (const auto &id : all_leaves) {
+            retval = retval && !refine_functor(id);
         }
-    }
+        return retval;
+    };
 
-    SECTION("reading a file that is too short returns an empty map")
+    const auto refine_functor_float = utils::refine_functor_float(camera, decorator, 1.0);
+    BENCHMARK("refine functor float")
     {
-        std::vector<qint64> bad_sizes = {
-            sizeof(size_t) + (sizeof(tile::Id) + sizeof(qsizetype)) * 4 + 4 * 3 + 2, // stop in last read byte array
-            68, // stop in read<T> (found by chance)
-            sizeof(size_t) + sizeof(tile::Id) + sizeof(qsizetype) + 3, // stop in read byte array (other read byte array)
-            sizeof(size_t) + sizeof(tile::Id) + 3
-        }; // stop in other read<T>
-
-        REQUIRE(!std::filesystem::exists(file_name));
-        TileId2DataMap map;
-        map[tile::Id { 23, { 44, 55 } }] = std::make_shared<QByteArray>("1234");
-        map[tile::Id { 1, { 13, 46 } }] = std::make_shared<QByteArray>("1234");
-        map[tile::Id { 2, { 13, 46 } }] = std::make_shared<QByteArray>("1234");
-        map[tile::Id { 3, { 13, 46 } }] = std::make_shared<QByteArray>("1234");
-        utils::write_tile_id_2_data_map(map, file_name);
-        for (const auto bad_size : bad_sizes) {
-            QFile file(file_name);
-            auto success = file.open(QIODevice::ReadWrite);
-            REQUIRE(success);
-            success = file.resize(bad_size);
-            REQUIRE(success);
-            file.close();
-
-            const auto read_map = utils::read_tile_id_2_data_map(file_name);
-            CHECK(read_map.size() == 0);
+        auto retval = true;
+        for (const auto &id : all_leaves) {
+            retval = retval && !refine_functor_float(id);
         }
+        return retval;
+    };
+}
+
+TEST_CASE("tile_scheduler/utils/camera_frustum_contains_tile")
+{
+    QFile file(":/map/height_data.atb");
+    const auto open = file.open(QIODeviceBase::OpenModeFlag::ReadOnly);
+    assert(open);
+    const QByteArray data = file.readAll();
+    const auto decorator = nucleus::tile_scheduler::utils::AabbDecorator::make(
+        TileHeights::deserialise(data));
+
+    SECTION("case 1")
+    {
+        auto cam = nucleus::camera::Definition(glm::dvec3 { 0, 0, 0 }, glm::dvec3 { 0, 1, 0 });
+        cam.set_viewport_size({ 100, 100 });
+        cam.set_field_of_view(90);
+        cam.set_near_plane(0.01f);
+
+        CHECK(nucleus::tile_scheduler::utils::camera_frustum_contains_tile(cam.frustum(), tile::SrsAndHeightBounds { { -1., 9., -1. }, { 1., 10., 1. } }));
+        CHECK(nucleus::tile_scheduler::utils::camera_frustum_contains_tile(cam.frustum(), tile::SrsAndHeightBounds { { 0., 0., 0. }, { 1., 1., 1. } }));
+        CHECK(nucleus::tile_scheduler::utils::camera_frustum_contains_tile(cam.frustum(), tile::SrsAndHeightBounds { { -10., -10., -10. }, { 10., 1., 10. } }));
+        CHECK(!nucleus::tile_scheduler::utils::camera_frustum_contains_tile(cam.frustum(), tile::SrsAndHeightBounds { { -10., -10., -10. }, { 10., -1., 10. } }));
+        CHECK(!nucleus::tile_scheduler::utils::camera_frustum_contains_tile(cam.frustum(), tile::SrsAndHeightBounds { { -10., 0., -10. }, { -9., 1., -9. } }));
+    }
+    SECTION("case 2")
+    {
+        auto cam = nucleus::camera::stored_positions::wien();
+        cam.set_viewport_size({ 1920, 1080 });
+        cam.set_field_of_view(60);
+
+        CHECK(!nucleus::tile_scheduler::utils::camera_frustum_contains_tile_old(cam.frustum(),
+            tile::SrsAndHeightBounds { { 1878516.4071364924, 5635549.221409474, 0.0 }, { 2504688.5428486564, 6261721.357121637, 1157.4707507122087 } }));
+        CHECK(!nucleus::tile_scheduler::utils::camera_frustum_contains_tile(cam.frustum(),
+            tile::SrsAndHeightBounds { { 1878516.4071364924, 5635549.221409474, 0.0 }, { 2504688.5428486564, 6261721.357121637, 1157.4707507122087 } }));
+
+        CHECK(nucleus::tile_scheduler::utils::camera_frustum_contains_tile(cam.frustum(), decorator->aabb({ 3, { 4, 4 } }))
+            == nucleus::tile_scheduler::utils::camera_frustum_contains_tile_old(cam.frustum(), decorator->aabb({ 3, { 4, 4 } })));
+    }
+    SECTION("case 3")
+    {
+        auto cam = nucleus::camera::Definition({ 1.76106e+06, 6.07163e+06, 2510.08 },
+            glm::dvec3 { 1.76106e+06, 6.07163e+06, 2510.08 } - glm::dvec3 { 0.9759, 0.19518, 0.09759 });
+        cam.set_viewport_size({ 2561, 1369 });
+        cam.set_field_of_view(60);
+        CHECK(nucleus::tile_scheduler::utils::camera_frustum_contains_tile(cam.frustum(), decorator->aabb({ 10, { 557, 667 } }))
+            == nucleus::tile_scheduler::utils::camera_frustum_contains_tile_old(cam.frustum(), decorator->aabb({ 10, { 557, 667 } })));
     }
 
-    SECTION("write and read of a qimage")
+    SECTION("many automated test cases")
     {
-        REQUIRE(!std::filesystem::exists(file_name));
-        TileId2DataMap map;
+        std::vector<tile::Id> tile_ids;
+        quad_tree::onTheFlyTraverse(
+            tile::Id { 0, { 0, 0 } },
+            [](const tile::Id& v) { return v.zoom_level < 7; },
+            [&tile_ids](const tile::Id& v) {
+                tile_ids.push_back(v);
+                return v.children();
+            });
 
-        QByteArray jpeg_image_array;
-        QByteArray png_image_array;
+        QFile file(":/map/height_data.atb");
+        const auto open = file.open(QIODeviceBase::OpenModeFlag::ReadOnly);
+        assert(open);
+        const QByteArray data = file.readAll();
+        const auto decorator = nucleus::tile_scheduler::utils::AabbDecorator::make(
+            TileHeights::deserialise(data));
+
+        const auto camera_positions = std::vector {
+            nucleus::camera::stored_positions::karwendel(),
+            nucleus::camera::stored_positions::grossglockner(),
+            nucleus::camera::stored_positions::oestl_hochgrubach_spitze(),
+            nucleus::camera::stored_positions::schneeberg(),
+            nucleus::camera::stored_positions::wien(),
+            nucleus::camera::stored_positions::stephansdom(),
+        };
+        for (const auto& camera_position : camera_positions) {
+            quad_tree::onTheFlyTraverse(tile::Id { 0, { 0, 0 } },
+                nucleus::tile_scheduler::utils::refineFunctor(camera_position,
+                    decorator,
+                    1),
+                [&tile_ids](const tile::Id& v) {
+                    tile_ids.push_back(v);
+                    return v.children();
+                });
+        }
+        for (const auto& camera : camera_positions) {
+            const auto camera_frustum = camera.frustum();
+            for (const auto& tile_id : tile_ids) {
+                const auto aabb = decorator->aabb(tile_id);
+                CHECK(nucleus::tile_scheduler::utils::camera_frustum_contains_tile(camera_frustum, aabb)
+                    == nucleus::tile_scheduler::utils::camera_frustum_contains_tile_old(camera_frustum, aabb));
+            }
+        }
+
+        BENCHMARK("camera_frustum_contains_tile")
         {
-            QImage image(QSize { int(256), int(256) }, QImage::Format_ARGB32);
-            image.fill(Qt::GlobalColor::white);
-            QBuffer buffer(&jpeg_image_array);
-            buffer.open(QIODevice::WriteOnly);
-            image.save(&buffer, "JPEG");
-        }
-        {
-            QImage image(QSize { int(64), int(64) }, QImage::Format_ARGB32);
-            image.fill(Qt::GlobalColor::white);
-            QBuffer buffer(&png_image_array);
-            buffer.open(QIODevice::WriteOnly);
-            image.save(&buffer, "PNG");
-        }
+            bool retval = false;
+            for (const auto& camera : camera_positions) {
+                const auto camera_frustum = camera.frustum();
+                for (const auto& tile_id : tile_ids) {
+                    const auto aabb = decorator->aabb(tile_id);
+                    retval = retval != nucleus::tile_scheduler::utils::camera_frustum_contains_tile(camera_frustum, aabb);
+                }
+            }
+            return retval;
+        };
 
-        const auto jpeg_tile_id = tile::Id { 0, { 0, 0 } };
-        const auto png_tile_id = tile::Id { 1, { 0, 0 } };
-        map[jpeg_tile_id] = std::make_shared<QByteArray>(jpeg_image_array);
-        map[png_tile_id] = std::make_shared<QByteArray>(png_image_array);
-        utils::write_tile_id_2_data_map(map, file_name);
-        const auto read_map = utils::read_tile_id_2_data_map(file_name);
-        REQUIRE(read_map.size() == 2);
+        BENCHMARK("camera_frustum_contains_tile_old")
         {
-            REQUIRE(read_map.contains(jpeg_tile_id));
-            REQUIRE(read_map.at(jpeg_tile_id));
-            const auto bytes = *read_map.at(jpeg_tile_id);
-            const auto read_image = nucleus::utils::tile_conversion::toQImage(*read_map.at(jpeg_tile_id));
-            CHECK(read_image.width() == 256);
-            CHECK(read_image.height() == 256);
-            CHECK(!read_image.isNull());
-            CHECK(read_image.constBits());
-            CHECK(read_image.pixel({ 55, 33 }) == qRgb(255, 255, 255));
-            CHECK(read_image.format() == QImage::Format_RGB32);
-        }
-        {
-            REQUIRE(read_map.contains(png_tile_id));
-            REQUIRE(read_map.at(png_tile_id));
-            const auto read_png = nucleus::utils::tile_conversion::qImage2uint16Raster(nucleus::utils::tile_conversion::toQImage(*read_map.at(png_tile_id)));
-            CHECK(read_png.width() == 64);
-            CHECK(read_png.height() == 64);
-            CHECK(*(read_png.begin() + 20 * 64 + 30) == 256 * 256 - 1);
-        }
+            bool retval = false;
+            for (const auto& camera : camera_positions) {
+                const auto camera_frustum = camera.frustum();
+                for (const auto& tile_id : tile_ids) {
+                    const auto aabb = decorator->aabb(tile_id);
+                    retval = retval != nucleus::tile_scheduler::utils::camera_frustum_contains_tile_old(camera_frustum, aabb);
+                }
+            }
+            return retval;
+        };
     }
 }

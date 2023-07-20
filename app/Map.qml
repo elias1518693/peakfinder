@@ -17,10 +17,9 @@
  *****************************************************************************/
 
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Material
 import QtQuick.Layouts
 import Alpine
-import Qt5Compat.GraphicalEffects
 
 Rectangle {
     id: map_gui
@@ -36,10 +35,18 @@ Rectangle {
     }
 
     Image {
+        function oc_scale() : float {
+            if (renderer.camera_operation_centre_distance < 0) {
+                return 1.0;
+            }
+            let max_dist = 1000.0;
+            let scale = 1 + Math.pow((1 - (Math.min(max_dist, renderer.camera_operation_centre_distance) / max_dist)) * 1.6, 6);
+            return scale;
+        }
         id: camera_operation_centre
-        source: "qrc:/icons/camera_operation_centre.svg"
-        width: 16
-        height: 16
+        source: "icons/camera_operation_centre.svg"
+        width: 16 * oc_scale()
+        height: 16 * oc_scale()
         sourceSize: Qt.size(width, height)
         x: renderer.camera_operation_centre.x - width / 2
         y: renderer.camera_operation_centre.y - 60 - height / 2
@@ -56,19 +63,34 @@ Rectangle {
         }
 
         delegate: Rectangle {
-            function my_scale() {
-
-                let distance_scale = Math.max(0.4, model.size)
+            id: delegate_root
+            property int horizontal_text_margin: 40
+            property int vertical_text_margin: 10
+            property real alpha_value: my_alpha()
+            visible: alpha_value > 0
+            function my_scale() : float {
                 let importance_scale = model.importance / 10;
-                let min_scale = 0.1;
-                return (min_scale + (1.0-min_scale) * importance_scale) * distance_scale * 2.0;
+                let distance_scale = model.size + 0.3
+                return importance_scale * (importance_scale + 0.5) * distance_scale
+            }
+            function my_alpha() : float {
+                let alpha = my_scale();
+                if (alpha < 0.37)
+                    alpha = 0.0;
+                else if (alpha < 0.47)
+                    alpha = (alpha - 0.37) / 0.1;
+                else if (alpha > 3)
+                    alpha = 1 - (Math.min(alpha, 4) - 3);
+                else
+                    alpha = 1;
+                return Math.min(alpha, 0.7);
             }
             x: model.x * label_view.width / renderer.camera_width
             y: model.y * (label_view.height + 60) / renderer.camera_height - 60
             z:  50 * my_scale()
             Image {
                 id: icon
-                source: "qrc:/icons/peak.svg"
+                source: "icons/peak.svg"
                 width: 16 * my_scale()
                 height: 16 * my_scale()
                 sourceSize: Qt.size(width, height)
@@ -81,44 +103,18 @@ Rectangle {
                 id: text_rect
                 x: -(width) / 2
                 y: -icon.height - 20 * my_scale() - (height) / 2
-                color: "#00FFFFFF"
-                width: text.implicitWidth + 10
-                height: text.implicitHeight + 5
-
-                Glow {
-                    anchors.fill: text
-                    source: text
-                    color: "#CCCCCC"
-                    radius: 3
-                    samples: 5
-                    scale: text.scale
-                }
-//                Row {
-//                    Text { font.pointSize: 24; text: "Normal" }
-//                    Text { font.pointSize: 24; text: "Raised"; style: Text.Raised; styleColor: "#AAAAAA" }
-//                    Text { font.pointSize: 24; text: "Outline";style: Text.Outline; styleColor: "red" }
-//                    Text { font.pointSize: 24; text: "Sunken"; style: Text.Sunken; styleColor: "#AAAAAA" }
-//                }
+                color: Qt.alpha(Material.backgroundColor, delegate_root.alpha_value)
+                width: label_text.width + horizontal_text_margin
+                height: label_text.height + vertical_text_margin
+                scale: my_scale()
+                radius: height
                 Text {
-                    anchors.fill: parent
-                    id: text
-                    color: "#000000"
+                    anchors.centerIn: parent
+                    id: label_text
+                    color: Qt.alpha(Material.primaryTextColor, delegate_root.alpha_value)
                     text: model.text + "(" + model.altitude + "m)"
-                    font.pixelSize: 20 * my_scale()
-                    scale: 20 * my_scale() / font.pixelSize
+                    font.pixelSize: 25
                 }
-//                Text {
-//                    anchors {
-//                        horizontalCenter: text_rect
-//                        bottom: text.top
-//                    }
-//                    id: text2
-//                    color: "#000000"
-//                    text: model.text + "(" + model.altitude + "m)"
-//                    font.pixelSize: 20 * my_scale()
-//                    style: Text.Outline; styleColor: "#CCCCCC"
-////                    scale: 20 * my_scale() / font.pixelSize
-//                }
             }
 
         }
@@ -140,41 +136,39 @@ Rectangle {
             bottomMargin: 10
         }
     }
-    RoundButton {
+    RoundMapButton {
         id: compass
-        width: 60
-        height: 60
         rotation: renderer.camera_rotation_from_north
+        icon_source: "icons/compass.svg"
         onClicked: renderer.rotate_north()
-        focusPolicy: Qt.NoFocus
-        icon {
-            source: "qrc:/icons/compass.svg"
-            height: 40
-            width: 40
-        }
+
         anchors {
             right: parent.right
             bottom: current_location.top
-            rightMargin: 10
-            bottomMargin: 10
+            margins: 16
         }
     }
 
-    RoundButton {
+    RoundMapButton {
         id: current_location
-        width: 60
-        height: 60
-        checkable: true
-        focusPolicy: Qt.NoFocus
-        icon {
-            source: "qrc:/icons/current_location.svg"
-            height: 32
-            width: 32
-        }
         anchors {
             right: parent.right
             bottom: parent.bottom
-            margins: 10
+            margins: 16
+        }
+        checkable: true
+        icon_source: "icons/current_location.svg"
+    }
+
+    Connections {
+        enabled: current_location.checked
+        target: renderer
+        function onMouse_pressed() {
+            current_location.checked = false;
+        }
+
+        function onTouch_made() {
+            current_location.checked = false;
         }
     }
 }

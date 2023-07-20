@@ -49,8 +49,9 @@ Controller::Controller(AbstractRenderWindow* render_window)
     qRegisterMetaType<nucleus::event_parameter::Wheel>();
     qRegisterMetaType<QImage>();
 
-    m_camera_controller = std::make_unique<nucleus::camera::Controller>(
-        nucleus::camera::stored_positions::grossglockner(), m_render_window->depth_tester());
+    m_camera_controller
+        = std::make_unique<nucleus::camera::Controller>(nucleus::camera::stored_positions::oestl_hochgrubach_spitze(),
+            m_render_window->depth_tester());
 
     m_terrain_service = std::make_unique<TileLoadService>("https://alpinemaps.cg.tuwien.ac.at/tiles/alpine_png/", TileLoadService::UrlPattern::ZXY, ".png");
     //    m_ortho_service.reset(new TileLoadService("https://tiles.bergfex.at/styles/bergfex-osm/", TileLoadService::UrlPattern::ZXY_yPointingSouth, ".jpeg"));
@@ -61,8 +62,9 @@ Controller::Controller(AbstractRenderWindow* render_window)
         "https://mapsneu.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg"));
 
     m_tile_scheduler = std::make_unique<nucleus::tile_scheduler::Scheduler>();
-    m_tile_scheduler->set_gpu_quad_limit(250);
-    m_tile_scheduler->set_ram_quad_limit(2000);
+    m_tile_scheduler->read_disk_cache();
+    m_tile_scheduler->set_gpu_quad_limit(500);
+    m_tile_scheduler->set_ram_quad_limit(12000);
     {
         QFile file(":/map/height_data.atb");
         const auto open = file.open(QIODeviceBase::OpenModeFlag::ReadOnly);
@@ -85,20 +87,29 @@ Controller::Controller(AbstractRenderWindow* render_window)
         connect(la, &LayerAssembler::tile_requested, m_ortho_service.get(), &TileLoadService::load);
         connect(la, &LayerAssembler::tile_requested, m_terrain_service.get(), &TileLoadService::load);
 
-        connect(m_ortho_service.get(), &TileLoadService::load_ready, la, &LayerAssembler::deliver_ortho);
-        connect(m_ortho_service.get(), &TileLoadService::tile_unavailable, la, &LayerAssembler::report_missing_ortho);
-        connect(m_terrain_service.get(), &TileLoadService::load_ready, la, &LayerAssembler::deliver_height);
-        connect(m_terrain_service.get(), &TileLoadService::tile_unavailable, la, &LayerAssembler::report_missing_height);
+        connect(m_ortho_service.get(), &TileLoadService::load_finished, la, &LayerAssembler::deliver_ortho);
+        connect(m_terrain_service.get(), &TileLoadService::load_finished, la, &LayerAssembler::deliver_height);
         connect(la, &LayerAssembler::tile_loaded, qa, &QuadAssembler::deliver_tile);
         connect(qa, &QuadAssembler::quad_loaded, sl, &SlotLimiter::deliver_quad);
-        connect(sl, &SlotLimiter::quads_delivered, sch, &Scheduler::receive_quads);
+        connect(sl, &SlotLimiter::quad_delivered, sch, &Scheduler::receive_quad);
+    }
+    if (QNetworkInformation::loadDefaultBackend() && QNetworkInformation::instance()) {
+        QNetworkInformation* n = QNetworkInformation::instance();
+        m_tile_scheduler->set_network_reachability(n->reachability());
+        connect(n, &QNetworkInformation::reachabilityChanged, m_tile_scheduler.get(), &Scheduler::set_network_reachability);
     }
 
 #ifdef ALP_ENABLE_THREADING
     m_scheduler_thread = std::make_unique<QThread>();
     m_scheduler_thread->setObjectName("tile_scheduler_thread");
+    qDebug() << "scheduler thread: " << m_scheduler_thread.get();
+#ifdef __EMSCRIPTEN__ // make request from main thread on webassembly due to QTBUG-109396
+    m_terrain_service->moveToThread(QCoreApplication::instance()->thread());
+    m_ortho_service->moveToThread(QCoreApplication::instance()->thread());
+#else
     m_terrain_service->moveToThread(m_scheduler_thread.get());
     m_ortho_service->moveToThread(m_scheduler_thread.get());
+#endif
     m_tile_scheduler->moveToThread(m_scheduler_thread.get());
     m_scheduler_thread->start();
 #endif
@@ -108,7 +119,7 @@ Controller::Controller(AbstractRenderWindow* render_window)
     connect(m_render_window, &AbstractRenderWindow::gpu_ready_changed, m_tile_scheduler.get(), &Scheduler::set_enabled);
 
     // NOTICE ME!!!! READ THIS, IF YOU HAVE TROUBLES WITH SIGNALS NOT REACHING THE QML RENDERING THREAD!!!!111elevenone
-    // In Qt 6.4 and earlier the rendering thread goes to sleep. See RenderThreadNotifier.
+    // In Qt the rendering thread goes to sleep (at least until Qt 6.5, See RenderThreadNotifier).
     // At the time of writing, an additional connection from tile_ready and tile_expired to the notifier is made.
     // this only works if ALP_ENABLE_THREADING is on, i.e., the tile scheduler is on an extra thread. -> potential issue on webassembly
     connect(m_camera_controller.get(), &nucleus::camera::Controller::definition_changed, m_tile_scheduler.get(), &Scheduler::update_camera);
