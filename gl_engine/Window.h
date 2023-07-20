@@ -91,7 +91,7 @@ private:
 
     int m_frame = 0;
     bool m_initialised = false;
-    float m_matching_fov = 18.9246444;
+    float m_matching_fov = 49.429109;
     QImage current_image;
     TimePoint m_frame_start;
     TimePoint m_frame_end;

@@ -205,7 +205,7 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
     // END DEPTH BUFFER
 
     m_camera.set_viewport_size(cubemap_size);
-    m_camera.set_field_of_view(90);
+    //m_camera.set_field_of_view(90);
 
     m_shader_manager->tile_shader()->bind();
     f->glClearColor(1.0, 0.0, 0.5, 1);
@@ -382,23 +382,22 @@ void Window::process_image(const QImage& image){
 
     cv::Mat debugImage;
     cv::Mat scaledImage = QImageToMat(image);
-    //this->paintPanorama();
 
     float fov = glm::radians(m_matching_fov);
-    cv::Mat homeo = calculateHomographyMatrix(cv::Size(current_image.width(), current_image.height()),cv::Size(image.width(), image.height()), m_matching_fov);
-    cv::resize(scaledImage, scaledImage, cv::Size(image.width() * homeo.at<double>(0, 0), image.height()* homeo.at<double>(1, 1)));
+    //cv::Mat homeo = calculateHomographyMatrix(cv::Size(current_image.width(), current_image.height()),cv::Size(image.width(), image.height()), m_matching_fov);
+     float k = fov * current_image.width()/(0.5f* glm::pi<float>() * image.width());
+    cv::resize(scaledImage, scaledImage, cv::Size(image.width(), image.height()));
     cv::resize(scaledImage,debugImage, cv::Size(scaledImage.cols/4, scaledImage.rows/4));
     cv::imshow("scaled image",debugImage);
     cv::waitKey(0);
     cv::destroyAllWindows();
-    float k = fov * current_image.width()/(2* glm::pi<float>() * image.width());
+
     qDebug()<< k;
-    qDebug()<< homeo.at<double>(0, 0);
+    //qDebug()<< homeo.at<double>(0, 0);
     QImage scaledImageQt = mat_to_qimage(scaledImage);
     std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(scaledImageQt, Framebuffer::DepthFormat::None);
-    QImage scaled = image.scaled(scaledImageQt.width() , scaledImageQt.height(), Qt::KeepAspectRatio);
-    framebuffer->resize(glm::vec2(scaledImageQt.width(),  scaledImageQt.height()));
-     std::unique_ptr<Framebuffer> framebuffer_out = std::make_unique<Framebuffer>(scaled, Framebuffer::DepthFormat::None);
+    framebuffer->resize(glm::vec2(current_image.width() * k,  current_image.height() * k));
+     std::unique_ptr<Framebuffer> framebuffer_out = std::make_unique<Framebuffer>(scaledImageQt, Framebuffer::DepthFormat::None);
     qDebug()<<framebuffer->size().x << framebuffer->size().y;
         m_shader_manager->cylinder_program()->bind();
         f->glUniform2f(m_shader_manager->cylinder_program()->uniform_location("imageSize"),framebuffer->size().x, framebuffer->size().y);
@@ -421,7 +420,7 @@ void Window::process_image(const QImage& image){
     cv::waitKey(0);
     cv::destroyAllWindows();
 
-    m_shader_manager->cylinder_program()->bind();
+    m_shader_manager->sobel_program()->bind();
     framebuffer = std::make_unique<Framebuffer>(current_image, Framebuffer::DepthFormat::None);
     framebuffer_out = std::make_unique<Framebuffer>(current_image, Framebuffer::DepthFormat::None);
     qDebug()<<framebuffer->size().x << framebuffer->size().y;
@@ -451,7 +450,6 @@ void Window::process_image(const QImage& image){
     cv::destroyAllWindows();
 
     //template matching
-    //cv::matchTemplate(panorama,image_real,out_mat,cv::TM_CCORR);
     cv::matchTemplate(panorama,image_real,out_mat,cv::TM_CCORR_NORMED);
 
     cv::resize(out_mat,debugImage, cv::Size(panorama.cols/10,panorama.rows/10));

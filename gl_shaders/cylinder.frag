@@ -79,9 +79,5 @@ void main(void)
     float sobel = sqrt((sobel_edge_h * sobel_edge_h) + (sobel_edge_v * sobel_edge_v));
     float direction = atan(sobel_edge_h, sobel_edge_v)/3.1415926538;
     direction = (direction+1)/2.0f;
-    //if(sobel < 0.66){
-
-    //    sobel = 0;
-    //}
     fragColor = vec4(vec3(sobel) , 1.0 );
 }
