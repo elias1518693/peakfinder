@@ -385,16 +385,12 @@ void Window::process_image(const QImage& image){
 
     float fov = glm::radians(m_matching_fov);
     //cv::Mat homeo = calculateHomographyMatrix(cv::Size(current_image.width(), current_image.height()),cv::Size(image.width(), image.height()), m_matching_fov);
-     float k = fov * current_image.width()/(0.5f* glm::pi<float>() * image.width());
-    cv::resize(scaledImage, scaledImage, cv::Size(image.width(), image.height()));
-    cv::resize(scaledImage,debugImage, cv::Size(scaledImage.cols/4, scaledImage.rows/4));
-    cv::imshow("scaled image",debugImage);
-    cv::waitKey(0);
-    cv::destroyAllWindows();
+     float k = fov * 4000/(0.5f* glm::pi<float>() * image.width());
+
 
     qDebug()<< k;
     //qDebug()<< homeo.at<double>(0, 0);
-    QImage scaledImageQt = mat_to_qimage(scaledImage);
+    QImage scaledImageQt = image;
     std::unique_ptr<Framebuffer> framebuffer = std::make_unique<Framebuffer>(scaledImageQt, Framebuffer::DepthFormat::None);
     framebuffer->resize(glm::vec2(current_image.width() * k,  current_image.height() * k));
      std::unique_ptr<Framebuffer> framebuffer_out = std::make_unique<Framebuffer>(scaledImageQt, Framebuffer::DepthFormat::None);
