@@ -12,7 +12,7 @@ qt_add_library(gl_engine STATIC
     helpers.h
     ShaderProgram.h ShaderProgram.cpp
 )
-target_link_libraries(gl_engine PUBLIC nucleus Qt::OpenGL)
+target_link_libraries(gl_engine PUBLIC nucleus Qt::OpenGL ${OpenCV_LIBS})
 target_include_directories(gl_engine PRIVATE .)
 
 qt_add_resources(gl_engine "shaders"
@@ -27,5 +27,9 @@ qt_add_resources(gl_engine "shaders"
     shaders/tile.vert
     shaders/depth.frag
     shaders/encoder.glsl
+    shaders/panorama.frag
+    shaders/panorama.vert
+    shaders/sobel.frag
+    shaders/cylinder.frag
 )
 target_compile_definitions(gl_engine PUBLIC ALP_RESOURCES_PREFIX="${CMAKE_CURRENT_SOURCE_DIR}/shaders/")

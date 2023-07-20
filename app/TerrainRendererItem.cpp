@@ -375,3 +375,29 @@ void TerrainRendererItem::set_tile_cache_size(unsigned int new_tile_cache_size)
     m_tile_cache_size = new_tile_cache_size;
     emit tile_cache_size_changed(m_tile_cache_size);
 }
+
+void TerrainRendererItem::load_image(QString path)
+{
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    reader.setAllocationLimit(2000);
+    const QImage image = reader.read();
+    if (image.isNull()) {
+        qWarning() << reader.errorString();
+        return;
+    }
+    std::string test = path.toStdString();
+    std::ifstream istream(test.c_str(), std::ifstream::binary);
+
+    // parse image EXIF and XMP metadata
+    TinyEXIF::EXIFInfo imageEXIF(istream);
+
+    std::cout
+        << "Image Description " << (imageEXIF.ImageWidth / imageEXIF.XResolution) * 25.4 << "\n"
+        << "Image Resolution " << imageEXIF.ImageWidth << "x" << std::to_string(imageEXIF.XResolution) << " pixels\n"
+        << "Camera Model " << imageEXIF.Make << " - " << imageEXIF.Model << "\n"
+        << "Focal Length " << imageEXIF.FocalLength << " mm" << std::endl;
+
+    emit process_image(image);
+    //RenderThreadNotifier::instance()->notify();
+}

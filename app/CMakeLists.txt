@@ -16,7 +16,7 @@ qt_add_qml_module(alpineapp
     RESOURCE_PREFIX /qt/qml
     QML_FILES
         main_loader.qml
-        Main.qml
+        main.qml
         About.qml
         Map.qml
         SearchBox.qml
@@ -24,6 +24,7 @@ qt_add_qml_module(alpineapp
         Settings.qml
         Coordinates.qml
         RoundMapButton.qml
+        Peakfinder.qml
     RESOURCES
         icons/camera_operation_centre.svg
         icons/compass.svg

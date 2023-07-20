@@ -91,7 +91,7 @@ Item {
             model: ListModel {
                 ListElement { title: qsTr("Map"); source: "map" }
                 ListElement { title: qsTr("Coordinates"); source: "Coordinates.qml"}
-		ListElement { title: qsTr("Peakfinder"); source: "Peakfinder.qml" }
+                ListElement { title: qsTr("Peakfinder"); source: "peakfinder.qml" }
 //                ListElement { title: qsTr("Cached Content"); source: "" }
                 ListElement { title: qsTr("Settings"); source: "Settings.qml" }
                 ListElement { title: qsTr("About"); source: "About.qml" }

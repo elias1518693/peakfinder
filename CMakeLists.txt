@@ -52,7 +52,10 @@ endif()
 if (ALP_UNITTESTS)
     find_package(Qt6 REQUIRED COMPONENTS Test)
 endif()
+set(OpenCV_DIR "E:/opencv/OpenCV-MinGW-Build")
 
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 include(FetchContent)
 FetchContent_Declare(

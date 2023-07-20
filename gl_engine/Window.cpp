@@ -203,9 +203,9 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
     m_tile_manager->draw(m_shader_manager->depth_program(), m_camera);
     m_depth_buffer->unbind();
     // END DEPTH BUFFER
-
+    float oldFov = m_camera.field_of_view();
     m_camera.set_viewport_size(cubemap_size);
-    //m_camera.set_field_of_view(90);
+    m_camera.set_field_of_view(90);
 
     m_shader_manager->tile_shader()->bind();
     f->glClearColor(1.0, 0.0, 0.5, 1);
@@ -245,7 +245,7 @@ void Window::paintPanorama(QOpenGLFramebufferObject* framebuffer){
         current_image = transferBuffer->read_colour_attachment(0);
     }
 
-
+    m_camera.set_field_of_view(oldFov);
 }
 
 

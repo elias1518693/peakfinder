@@ -54,7 +54,15 @@ ShaderManager::ShaderManager()
         = std::make_unique<ShaderProgram>(ShaderProgram::Files({ "tile.vert" }),
             ShaderProgram::Files({ "encoder.glsl",
                 "depth.frag" }));
-
+    m_panorama_program = std::make_unique<ShaderProgram>(
+        ShaderProgram::Files({ "panorama.vert" }),
+        ShaderProgram::Files({ "panorama.frag" }));
+    m_sobel_program = std::make_unique<ShaderProgram>(
+        ShaderProgram::Files({ "screen_pass.vert" }),
+        ShaderProgram::Files({ "sobel.frag" }));
+    m_cylinder_program = std::make_unique<ShaderProgram>(
+        ShaderProgram::Files({ "panorama.vert" }),
+        ShaderProgram::Files({ "cylinder.frag" }));
     m_program_list.push_back(m_tile_program.get());
     m_program_list.push_back(m_debug_program.get());
     m_program_list.push_back(m_screen_quad_program.get());
