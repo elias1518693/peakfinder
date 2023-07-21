@@ -381,10 +381,19 @@ void TerrainRendererItem::load_image(QString path)
     QImageReader reader(path);
     reader.setAutoTransform(true);
     reader.setAllocationLimit(2000);
-    const QImage image = reader.read();
+    QImage image = reader.read();
+
     if (image.isNull()) {
-        qWarning() << reader.errorString();
-        return;
+        QString relativepath = ALP_QML_SOURCE_DIR + path;
+         relativepath.replace("file:/", "");
+         QImageReader reader2(relativepath);
+         reader2.setAutoTransform(true);
+         reader2.setAllocationLimit(2000);
+         image = reader2.read();
+         if (image.isNull()) {
+            qWarning() << reader.errorString();
+            return;
+         }
     }
     std::string test = path.toStdString();
     std::ifstream istream(test.c_str(), std::ifstream::binary);
@@ -397,7 +406,13 @@ void TerrainRendererItem::load_image(QString path)
         << "Image Resolution " << imageEXIF.ImageWidth << "x" << std::to_string(imageEXIF.XResolution) << " pixels\n"
         << "Camera Model " << imageEXIF.Make << " - " << imageEXIF.Model << "\n"
         << "Focal Length " << imageEXIF.FocalLength << " mm" << std::endl;
-
+    float lenswidth = 0;
+    if(imageEXIF.Make == "SONY")
+        lenswidth = 35.9;
+    else if(imageEXIF.Make == "HMD Global"){
+        lenswidth = 5.839;
+    }
+    std::cout << "FOV"<< ( 2 * atan(lenswidth/(2*imageEXIF.FocalLength))) * 180/std::numbers::pi << std::endl;;
     emit process_image(image);
     //RenderThreadNotifier::instance()->notify();
 }

@@ -386,8 +386,6 @@ void Window::process_image(const QImage& image){
     float fov = glm::radians(m_matching_fov);
     //cv::Mat homeo = calculateHomographyMatrix(cv::Size(current_image.width(), current_image.height()),cv::Size(image.width(), image.height()), m_matching_fov);
      float k = fov * 4000/(0.5f* glm::pi<float>() * image.width());
-
-
     qDebug()<< k;
     //qDebug()<< homeo.at<double>(0, 0);
     QImage scaledImageQt = image;

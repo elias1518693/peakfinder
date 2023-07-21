@@ -59,9 +59,9 @@ Rectangle {
             Button {
                 text: "Send"
                 onClicked: {
-                    var latitude = latitudeTextField.text
-                    var longitude = longitudeTextField.text
-                    var height = heightTextField.text
+                    var latitude = 47.672134//latitudeTextField.text
+                    var longitude =15.830982// longitudeTextField.text
+                    var height = 1290//heightTextField.text
                     var imageUrl = imageUrlTextField.text
 
                     // Call your function with the text field values as parameters
