@@ -133,7 +133,10 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     f->glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     m_shader_manager->tile_shader()->bind();
     m_tile_manager->draw(m_shader_manager->tile_shader(), m_camera);
-
+    if(m_store_image){
+        m_framebuffer->read_colour_attachment(0).save("D:/AlpineMaps/images/single_render/test.jpg");
+        m_store_image = false;
+    }
     m_framebuffer->unbind();
     if (framebuffer)
         framebuffer->bind();
@@ -216,6 +219,11 @@ void Window::update_gpu_quads(const std::vector<nucleus::tile_scheduler::tile_ty
 {
     assert(m_tile_manager);
     m_tile_manager->update_gpu_quads(new_quads, deleted_quads);
+}
+
+void Window::store_next_image()
+{
+    m_store_image = true;
 }
 
 float Window::depth(const glm::dvec2& normalised_device_coordinates)

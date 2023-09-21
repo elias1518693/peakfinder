@@ -70,7 +70,7 @@ public slots:
     void update_camera(const nucleus::camera::Definition& new_definition) override;
     void update_debug_scheduler_stats(const QString& stats) override;
     void update_gpu_quads(const std::vector<nucleus::tile_scheduler::tile_types::GpuTileQuad>& new_quads, const std::vector<tile::Id>& deleted_quads) override;
-
+    void store_next_image() override;
 private:
     using ClockResolution = std::chrono::microseconds;
     using Clock = std::chrono::steady_clock;
@@ -87,6 +87,7 @@ private:
     nucleus::camera::Definition m_camera;
 
     int m_frame = 0;
+    bool m_store_image = false;
     bool m_initialised = false;
     TimePoint m_frame_start;
     TimePoint m_frame_end;

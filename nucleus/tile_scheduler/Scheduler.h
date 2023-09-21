@@ -82,6 +82,7 @@ signals:
     void quad_received(const tile::Id& ids);
     void quads_requested(const std::vector<tile::Id>& ids);
     void gpu_quads_updated(const std::vector<tile_types::GpuTileQuad>& new_quads, const std::vector<tile::Id>& deleted_quads);
+    void all_quads_loaded();
 
 public slots:
     void update_camera(const nucleus::camera::Definition& camera);
