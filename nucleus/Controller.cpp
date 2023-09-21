@@ -48,7 +48,7 @@ Controller::Controller(AbstractRenderWindow* render_window)
     qRegisterMetaType<nucleus::event_parameter::Wheel>();
 
     m_camera_controller
-        = std::make_unique<nucleus::camera::Controller>(nucleus::camera::stored_positions::oestl_hochgrubach_spitze(),
+        = std::make_unique<nucleus::camera::Controller>(nucleus::camera::Definition(),
             m_render_window->depth_tester());
 
     m_terrain_service = std::make_unique<TileLoadService>("https://alpinemaps.cg.tuwien.ac.at/tiles/alpine_png/", TileLoadService::UrlPattern::ZXY, ".png");

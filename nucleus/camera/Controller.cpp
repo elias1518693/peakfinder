@@ -62,6 +62,15 @@ void Controller::set_latitude_longitude(double latitude, double longitude)
         0.0 });
 }
 
+void Controller::set_latitude_longitude_altitude(double latitude, double longitude, double altitude)
+{
+    const auto xyz_world_space = srs::lat_long_alt_to_world({ latitude, longitude, altitude});
+    move({ xyz_world_space.x - m_definition.position().x,
+        xyz_world_space.y - m_definition.position().y,
+         xyz_world_space.z - m_definition.position().z
+         });
+}
+
 void Controller::set_field_of_view(float fov_degrees)
 {
     if (qFuzzyCompare(m_definition.field_of_view(), fov_degrees))
@@ -83,6 +92,12 @@ void Controller::orbit(const glm::dvec3& centre, const glm::dvec2& degrees)
     if (degrees == glm::dvec2 { 0, 0 })
         return;
     m_definition.orbit(centre, degrees);
+    update();
+}
+void Controller::set_view_direction(const glm::dvec2& degrees){
+    if (degrees == glm::dvec2 { 0, 0 })
+        return;
+    m_definition.orbit(m_definition.position() , degrees);
     update();
 }
 

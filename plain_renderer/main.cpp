@@ -75,7 +75,6 @@ int main(int argc, char* argv[])
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName("AlpineMaps.org");
     QCoreApplication::setApplicationName("PlainRenderer");
-
     QSurfaceFormat fmt;
     fmt.setDepthBufferSize(24);
     fmt.setOption(QSurfaceFormat::DebugContext);
@@ -108,7 +107,9 @@ int main(int argc, char* argv[])
 #else
     glWindow.show();
 #endif
-
+    controller.camera_controller()->set_latitude_longitude_altitude(std::atof(argv[1]),std::atof(argv[2]), std::atof(argv[3]));
+    controller.camera_controller()->set_field_of_view(std::atof(argv[4]));
+    controller.camera_controller()->set_view_direction(glm::dvec2(std::atof(argv[5]), std::atof(argv[6])));
     // in web assembly, the gl window is resized before it is connected. need to set viewport manually.
     // native, however, glWindow has a zero size at this point.
     if (glWindow.width() > 0 && glWindow.height() > 0)
