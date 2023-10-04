@@ -46,6 +46,8 @@ void Window::paintOverGL()
     m_gl_window.paintOverGL(&p);
 }
 
+
+
 gl_engine::Window* Window::render_window()
 {
     return &m_gl_window;

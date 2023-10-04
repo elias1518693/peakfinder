@@ -196,6 +196,7 @@ void Scheduler::send_quad_requests()
         return m_ram_cache.contains(id) && m_ram_cache.peak_at(id).network_info().timestamp + m_retirement_age_for_tile_cache > current_time;
     });
     if(currently_active_tiles.size() == 0){
+        qDebug()<<"alls quads loaded";
         emit all_quads_loaded();
     }
     emit quads_requested(currently_active_tiles);

@@ -35,7 +35,6 @@ public:
     void resizeGL(int w, int h) override;
     void paintGL() override;
     void paintOverGL() override;
-
     [[nodiscard]] gl_engine::Window* render_window();
 
 protected:

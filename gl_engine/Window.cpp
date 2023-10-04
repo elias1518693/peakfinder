@@ -35,6 +35,7 @@
 #include <QSequentialAnimationGroup>
 #include <QTimer>
 #include <glm/glm.hpp>
+#include <QCoreApplication>
 
 #include "Atmosphere.h"
 #include "DebugPainter.h"
@@ -45,7 +46,6 @@
 #include "Window.h"
 #include "helpers.h"
 #include "nucleus/utils/bit_coding.h"
-
 using gl_engine::Window;
 
 Window::Window()
@@ -102,7 +102,9 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
     f->glEnable(GL_CULL_FACE);
     f->glCullFace(GL_BACK);
-
+    if(m_store_image){
+        m_framebuffer->resize(glm::dvec2(m_framebuffer->size().x * 4, m_framebuffer->size().y * 4));
+    }
     m_camera.set_viewport_size(m_framebuffer->size());
 
     // DEPTH BUFFER
@@ -134,8 +136,9 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     m_shader_manager->tile_shader()->bind();
     m_tile_manager->draw(m_shader_manager->tile_shader(), m_camera);
     if(m_store_image){
-        m_framebuffer->read_colour_attachment(0).save("D:/AlpineMaps/images/single_render/test.jpg");
+        m_framebuffer->read_colour_attachment(0).save("D:/AlpineMaps/images/single_render/" + m_file_name);
         m_store_image = false;
+        QCoreApplication::quit();
     }
     m_framebuffer->unbind();
     if (framebuffer)
@@ -224,6 +227,10 @@ void Window::update_gpu_quads(const std::vector<nucleus::tile_scheduler::tile_ty
 void Window::store_next_image()
 {
     m_store_image = true;
+}
+
+void Window::setFileName(QString fileName){
+    m_file_name = fileName;
 }
 
 float Window::depth(const glm::dvec2& normalised_device_coordinates)

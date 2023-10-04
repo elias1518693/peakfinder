@@ -64,6 +64,7 @@ public:
     void keyPressEvent(QKeyEvent*);
     void keyReleaseEvent(QKeyEvent*);
     void updateCameraEvent();
+    void setFileName(QString fileName);
     void set_permissible_screen_space_error(float new_error) override;
 
 public slots:
@@ -71,6 +72,7 @@ public slots:
     void update_debug_scheduler_stats(const QString& stats) override;
     void update_gpu_quads(const std::vector<nucleus::tile_scheduler::tile_types::GpuTileQuad>& new_quads, const std::vector<tile::Id>& deleted_quads) override;
     void store_next_image() override;
+
 private:
     using ClockResolution = std::chrono::microseconds;
     using Clock = std::chrono::steady_clock;
@@ -89,6 +91,7 @@ private:
     int m_frame = 0;
     bool m_store_image = false;
     bool m_initialised = false;
+    QString m_file_name;
     TimePoint m_frame_start;
     TimePoint m_frame_end;
     QString m_debug_text;
