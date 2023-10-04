@@ -96,7 +96,6 @@ def readExif(file_path):
             elif camera_model == "HMD Global":
                 lenswidth = 5.839
             fov = calculate_fov(focal_length, lenswidth)  # Pass sensor_width as None for now
-            fov = 70
             # Move file to position subdirectory
             return f" {latitude_dd} {longitude_dd} {height_dd} {fov}"
 
