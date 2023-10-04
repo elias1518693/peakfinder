@@ -10,20 +10,17 @@ import kornia.feature as KF
 import kornia as K
 import torch
 import torchvision.transforms as transforms
+from kornia_moons.feature import *
+import matplotlib.pyplot as plt
 def load_torch_image(fname, target_size):
     # Load the image using OpenCV
     img = cv2.imread(fname)
     
     # Resize the image using OpenCV
     img = cv2.resize(img, target_size)
-    
-    # Convert from BGR to RGB (if it's a color image)
-    if img.shape[2] == 3:
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
-    # Convert the image to a PyTorch tensor and normalize it
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
-    img = transform(img)
+    img = K.image_to_tensor(img, False).float() /255.
+    img = K.color.bgr_to_rgb(img)
+    return img
     
     return img
 
@@ -80,9 +77,13 @@ def readExif(file_path):
             latitude = exif_data.get('GPS GPSLatitude')
             longitude = exif_data.get('GPS GPSLongitude')
             height = exif_data.get('GPS GPSAltitude')
-            focal_length = float(str(exif_data.get('EXIF FocalLength')))
+            focal_length = exif_data.get('EXIF FocalLength')
             camera_model = exif_data.get('Image Model')
-
+            if "/" in str(focal_length.values[0]):
+                divisor, divident = str(focal_length.values[0]).split("/")
+                focal_length = float(str(divisor))/float(str(divident));
+            else:
+                focal_length = float(str(focal_length))
             # Convert Degrees Minutes Seconds to decimal degrees
             latitude_dd = dms_to_dd(latitude)
             longitude_dd = dms_to_dd(longitude)
@@ -95,7 +96,7 @@ def readExif(file_path):
             elif camera_model == "HMD Global":
                 lenswidth = 5.839
             fov = calculate_fov(focal_length, lenswidth)  # Pass sensor_width as None for now
-
+            fov = 70
             # Move file to position subdirectory
             return f" {latitude_dd} {longitude_dd} {height_dd} {fov}"
 
@@ -127,15 +128,16 @@ def start_renderer(renderer_path, image_path, rotate_degrees):
         
 def start_matching(image_path, rotate_degrees):
     i = 0
-    target_size = (256, 256)
+    target_size = (512, 512)
     original_path = image_path
     file_name, file_extension = os.path.splitext(os.path.basename(image_path))
     original_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)  # Load the original image in grayscale
     best_match_image_path = ""
     best_match_prob = 0.0
     device = K.utils.get_cuda_device_if_available()
-    while i <= 0:
+    while i <= 360:
         new_image_path = f"D:/AlpineMaps/images/single_render/{file_name}_{i}_d{file_extension}"
+        matched_image_path = f"D:/AlpineMaps/images/matched/{file_name}_{i}_d_matched{file_extension}"
         i += rotate_degrees
 
         img1 = load_torch_image(image_path, target_size)
@@ -148,6 +150,30 @@ def start_matching(image_path, rotate_degrees):
 
         with torch.no_grad():
             correspondences = matcher(input_dict)
+        mkpts0 = correspondences['keypoints0'].numpy()
+        mkpts1 = correspondences['keypoints1'].numpy()
+        H, inliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+        inliers = inliers > 0
+        
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+        draw_LAF_matches(
+        KF.laf_from_center_scale_ori(torch.from_numpy(mkpts0).view(1,-1, 2),
+                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1, 1),
+                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1)),
+
+        KF.laf_from_center_scale_ori(torch.from_numpy(mkpts1).view(1,-1, 2),
+                                    torch.ones(mkpts1.shape[0]).view(1,-1, 1, 1),
+                                    torch.ones(mkpts1.shape[0]).view(1,-1, 1)),
+        torch.arange(mkpts0.shape[0]).view(-1,1).repeat(1,2),
+        K.tensor_to_image(img1),
+        K.tensor_to_image(img2),
+        inliers,
+        draw_dict={'inlier_color': (0.2, 1, 0.2),
+                   'tentative_color': None, 
+                   'feature_color': (0.2, 0.5, 1), 'vertical': False},
+                   ax=ax,)
+        plt.savefig(matched_image_path)
 
 if __name__ == "__main__":
     # Path to plain_renderer.exe
@@ -160,7 +186,7 @@ if __name__ == "__main__":
         exit()
                         
     # Start the renderer with the specified parameters and select an image
-    #start_renderer(renderer_path,  image_path, rotate_degrees)
+    start_renderer(renderer_path,  image_path, rotate_degrees)
     
     start_matching(image_path, rotate_degrees)
     
