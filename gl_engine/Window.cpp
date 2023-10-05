@@ -46,6 +46,7 @@
 #include "Window.h"
 #include "helpers.h"
 #include "nucleus/utils/bit_coding.h"
+#include "qdir.h"
 using gl_engine::Window;
 
 Window::Window()
@@ -136,7 +137,10 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     m_shader_manager->tile_shader()->bind();
     m_tile_manager->draw(m_shader_manager->tile_shader(), m_camera);
     if(m_store_image){
-        m_framebuffer->read_colour_attachment(0).save("D:/AlpineMaps/images/single_render/" + m_file_name);
+        if(!QDir("rendered_images").exists()){
+            QDir().mkdir("rendered_images");
+        }
+        m_framebuffer->read_colour_attachment(0).save("rendered_images/" + m_file_name);
         m_store_image = false;
         QCoreApplication::quit();
     }

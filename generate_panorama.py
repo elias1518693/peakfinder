@@ -134,9 +134,11 @@ def start_matching(image_path, rotate_degrees):
     best_match_image_path = ""
     best_match_prob = 0.0
     device = K.utils.get_cuda_device_if_available()
+    if not os.path.exists('./matches'):
+        os.makedirs('matches')
     while i <= 360:
-        new_image_path = f"D:/AlpineMaps/images/single_render/{file_name}_{i}_d{file_extension}"
-        matched_image_path = f"D:/AlpineMaps/images/matched/{file_name}_{i}_d_matched{file_extension}"
+        new_image_path = f"rendered_images/{file_name}_{i}_d{file_extension}"
+        matched_image_path = f"matches/{file_name}_{i}_d_matched{file_extension}"
         i += rotate_degrees
 
         img1 = load_torch_image(image_path, target_size)
@@ -175,8 +177,9 @@ def start_matching(image_path, rotate_degrees):
         plt.savefig(matched_image_path)
 
 if __name__ == "__main__":
+    os.chdir('../build-peakfinder-Desktop_Qt_6_5_0_MinGW_64_bit-Release/plain_renderer')
     # Path to plain_renderer.exe
-    renderer_path = "E:/Github/Alpinemaps/build-peakfinder-Desktop_Qt_6_5_0_MinGW_64_bit-Release/plain_renderer/plain_renderer.exe "
+    renderer_path = "plain_renderer.exe "
 
     image_path = select_image()
     rotate_degrees = 45
