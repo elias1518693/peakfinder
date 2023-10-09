@@ -96,6 +96,7 @@ def readExif(file_path):
             elif camera_model == "HMD Global":
                 lenswidth = 5.839
             fov = calculate_fov(focal_length, lenswidth)  # Pass sensor_width as None for now
+            fov = 70
             # Move file to position subdirectory
             return f" {latitude_dd} {longitude_dd} {height_dd} {fov}"
 
@@ -115,11 +116,8 @@ def start_renderer(renderer_path, image_path, rotate_degrees):
             i += rotate_degrees
             print("Running:", cmd)
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-            processes.append(process)
+            process.wait()        
 
-        # Wait for all subprocesses to finish
-        for process in processes:
-            process.wait()
 
     except Exception as e:
         print("Error:", str(e))
@@ -175,12 +173,16 @@ def start_matching(image_path, rotate_degrees):
                    'feature_color': (0.2, 0.5, 1), 'vertical': False},
                    ax=ax,)
         plt.savefig(matched_image_path)
+        
+        num, Rs, Ts, Ns  = cv2.decomposeHomographyMat(H, np.eye(3))
+        
+        # Print the rotation in degrees
+        print(f"Rotation at {i} degrees: {Rs} degrees")
 
 if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_5_0_MinGW_64_bit-Release/plain_renderer')
     # Path to plain_renderer.exe
     renderer_path = "plain_renderer.exe "
-
     image_path = select_image()
     rotate_degrees = 45
     if not image_path:

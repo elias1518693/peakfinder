@@ -86,7 +86,7 @@ Controller::Controller(AbstractRenderWindow* render_window)
         connect(la, &LayerAssembler::tile_requested, m_terrain_service.get(), &TileLoadService::load);
 
         connect(sch, &Scheduler::all_quads_loaded, m_render_window, &AbstractRenderWindow::store_next_image);
-
+        connect(sch, &Scheduler::all_quads_loaded, sch, &Scheduler::persist_tiles);
         connect(m_ortho_service.get(), &TileLoadService::load_finished, la, &LayerAssembler::deliver_ortho);
         connect(m_terrain_service.get(), &TileLoadService::load_finished, la, &LayerAssembler::deliver_height);
         connect(la, &LayerAssembler::tile_loaded, qa, &QuadAssembler::deliver_tile);

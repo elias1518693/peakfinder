@@ -47,6 +47,7 @@
 #include "helpers.h"
 #include "nucleus/utils/bit_coding.h"
 #include "qdir.h"
+#include "nucleus/tile_scheduler/Scheduler.h"
 using gl_engine::Window;
 
 Window::Window()
@@ -142,6 +143,7 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
         }
         m_framebuffer->read_colour_attachment(0).save("rendered_images/" + m_file_name);
         m_store_image = false;
+
         QCoreApplication::quit();
     }
     m_framebuffer->unbind();
