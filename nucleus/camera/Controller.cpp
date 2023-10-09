@@ -31,11 +31,9 @@
 using namespace nucleus::camera;
 
 Controller::Controller(const Definition& camera,
-                       AbstractDepthTester* depth_tester,
-                       DataQuerier* data_querier)
+                       AbstractDepthTester* depth_tester)
     : m_definition(camera)
     , m_depth_tester(depth_tester)
-    , m_data_querier(data_querier)
     , m_interaction_style(std::make_unique<OrbitInteraction>())
 {
 }
@@ -59,24 +57,13 @@ void Controller::set_viewport(const glm::uvec2& new_viewport)
     update();
 }
 
-void Controller::fly_to_latitude_longitude(double latitude, double longitude)
+void Controller::set_latitude_longitude(double latitude, double longitude)
 {
-    const auto xy_world_space = srs::lat_long_to_world({latitude, longitude});
-    const auto look_at_point = glm::dvec3(xy_world_space,
-                                          m_data_querier->get_altitude({latitude, longitude}));
-    const auto camera_position = look_at_point + glm::normalize(glm::dvec3{0, -1, 1}) * 5000.;
-
-    auto end_camera = m_definition;
-    end_camera.look_at(camera_position, look_at_point);
-
-    m_animation_style = std::make_unique<LinearCameraAnimation>(m_definition, end_camera);
-    update();
-}
-
-void Controller::rotate_north()
-{
-    m_animation_style = std::make_unique<RotateNorthAnimation>(m_definition, m_depth_tester);
-    update();
+    const auto xyz_world_space = srs::lat_long_to_world({ latitude, longitude});
+    move({ xyz_world_space.x - m_definition.position().x,
+        xyz_world_space.y - m_definition.position().y,
+        0.0
+    });
 }
 
 void Controller::set_latitude_longitude_altitude(double latitude, double longitude, double altitude)
@@ -232,7 +219,7 @@ void Controller::update_camera_request()
     }
 }
 
-std::optional<glm::vec2> Controller::operation_centre()
+std::optional<glm::vec2> Controller::get_operation_centre()
 {
     if (m_animation_style) {
         return m_animation_style->operation_centre();
@@ -240,7 +227,7 @@ std::optional<glm::vec2> Controller::operation_centre()
     return m_interaction_style->operation_centre();
 }
 
-std::optional<float> Controller::operation_centre_distance()
+std::optional<float> Controller::get_operation_centre_distance()
 {
     if (m_animation_style) {
         return m_animation_style->operation_centre_distance(m_definition);
