@@ -17,6 +17,7 @@
  *****************************************************************************/
 
 #include "Controller.h"
+#include "DataQuerier.h"
 
 #include <QCoreApplication>
 #include <QFile>
@@ -72,6 +73,11 @@ Controller::Controller(AbstractRenderWindow* render_window)
         m_tile_scheduler->set_aabb_decorator(decorator);
         m_render_window->set_aabb_decorator(decorator);
     }
+    m_data_querier = std::make_unique<DataQuerier>(&m_tile_scheduler->ram_cache());
+    m_camera_controller = std::make_unique<nucleus::camera::Controller>(
+        nucleus::camera::stored_positions::oestl_hochgrubach_spitze(),
+        m_render_window->depth_tester(),
+        m_data_querier.get());
     {
         auto* sch = m_tile_scheduler.get();
         SlotLimiter* sl = new SlotLimiter(sch);

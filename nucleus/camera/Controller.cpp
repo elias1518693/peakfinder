@@ -19,20 +19,25 @@
 
 #include "Controller.h"
 
-#include "nucleus/camera/CadInteraction.h"
-#include "nucleus/camera/Definition.h"
-#include "nucleus/camera/FirstPersonInteraction.h"
-#include "nucleus/camera/OrbitInteraction.h"
-#include "nucleus/camera/RotateNorthInteraction.h"
+#include "CadInteraction.h"
+#include "Definition.h"
+#include "FirstPersonInteraction.h"
+#include "LinearCameraAnimation.h"
+#include "OrbitInteraction.h"
+#include "RotateNorthAnimation.h"
+#include "nucleus/DataQuerier.h"
 #include "nucleus/srs.h"
 
-namespace nucleus::camera {
-Controller::Controller(const Definition& camera, AbstractDepthTester* depth_tester)
+using namespace nucleus::camera;
+
+Controller::Controller(const Definition& camera,
+                       AbstractDepthTester* depth_tester,
+                       DataQuerier* data_querier)
     : m_definition(camera)
     , m_depth_tester(depth_tester)
-    , m_interaction_style(std::make_unique<InteractionStyle>())
+    , m_data_querier(data_querier)
+    , m_interaction_style(std::make_unique<OrbitInteraction>())
 {
-    set_interaction_style(std::make_unique<nucleus::camera::OrbitInteraction>());
 }
 
 
@@ -54,12 +59,24 @@ void Controller::set_viewport(const glm::uvec2& new_viewport)
     update();
 }
 
-void Controller::set_latitude_longitude(double latitude, double longitude)
+void Controller::fly_to_latitude_longitude(double latitude, double longitude)
 {
-    const auto xy_world_space = srs::lat_long_to_world({ latitude, longitude });
-    move({ xy_world_space.x - m_definition.position().x,
-        xy_world_space.y - m_definition.position().y,
-        0.0 });
+    const auto xy_world_space = srs::lat_long_to_world({latitude, longitude});
+    const auto look_at_point = glm::dvec3(xy_world_space,
+                                          m_data_querier->get_altitude({latitude, longitude}));
+    const auto camera_position = look_at_point + glm::normalize(glm::dvec3{0, -1, 1}) * 5000.;
+
+    auto end_camera = m_definition;
+    end_camera.look_at(camera_position, look_at_point);
+
+    m_animation_style = std::make_unique<LinearCameraAnimation>(m_definition, end_camera);
+    update();
+}
+
+void Controller::rotate_north()
+{
+    m_animation_style = std::make_unique<RotateNorthAnimation>(m_definition, m_depth_tester);
+    update();
 }
 
 void Controller::set_latitude_longitude_altitude(double latitude, double longitude, double altitude)
@@ -121,6 +138,10 @@ void Controller::mouse_press(const event_parameter::Mouse& e)
 
 void Controller::mouse_move(const event_parameter::Mouse& e)
 {
+    if (m_animation_style) {
+        m_animation_style.reset();
+        m_interaction_style->reset_interaction(m_definition, m_depth_tester);
+    }
     const auto new_definition = m_interaction_style->mouse_move_event(e, m_definition, m_depth_tester);
     if (!new_definition)
         return;
@@ -150,27 +171,22 @@ void Controller::key_press(const QKeyCombination& e)
     }
 
     if (e.key() == Qt::Key_1) {
-        set_interaction_style(std::make_unique<nucleus::camera::OrbitInteraction>());
+        m_interaction_style = std::make_unique<OrbitInteraction>();
     }
     if (e.key() == Qt::Key_2) {
-        set_interaction_style(std::make_unique<nucleus::camera::FirstPersonInteraction>());
+        m_interaction_style = std::make_unique<FirstPersonInteraction>();
     }
     if (e.key() == Qt::Key_3) {
-        set_interaction_style(std::make_unique<nucleus::camera::CadInteraction>());
-    }
-    if (e.key() == Qt::Key_C) {
-        set_animation_style(std::make_unique<nucleus::camera::RotateNorthInteraction>());
+        m_interaction_style = std::make_unique<CadInteraction>();
     }
 
-    if (m_animation_style) {
-        update();
-    } else {
-        const auto new_definition = m_interaction_style->key_press_event(e, m_definition, m_depth_tester);
-        if (!new_definition)
-            return;
-        m_definition = new_definition.value();
-        update();
-    }
+    const auto new_definition = m_interaction_style->key_press_event(e,
+                                                                     m_definition,
+                                                                     m_depth_tester);
+    if (!new_definition)
+        return;
+    m_definition = new_definition.value();
+    update();
 }
 
 void Controller::key_release(const QKeyCombination& e)
@@ -184,6 +200,11 @@ void Controller::key_release(const QKeyCombination& e)
 
 void Controller::touch(const event_parameter::Touch& e)
 {
+    if (m_animation_style) {
+        m_animation_style.reset();
+        m_interaction_style->reset_interaction(m_definition, m_depth_tester);
+    }
+
     const auto new_definition = m_interaction_style->touch_event(e, m_definition, m_depth_tester);
     if (!new_definition)
         return;
@@ -194,13 +215,13 @@ void Controller::touch(const event_parameter::Touch& e)
 void Controller::update_camera_request()
 {
     if (m_animation_style) {
-        const auto new_animation = m_animation_style->update(m_definition, m_depth_tester);
-        if (!new_animation) {
+        const auto new_camera_definition = m_animation_style->update(m_definition, m_depth_tester);
+        if (!new_camera_definition) {
             m_animation_style.reset();
             m_interaction_style->reset_interaction(m_definition, m_depth_tester);
             return;
         }
-        m_definition = new_animation.value();
+        m_definition = new_camera_definition.value();
         update();
     } else {
         const auto new_definition = m_interaction_style->update(m_definition, m_depth_tester);
@@ -211,34 +232,20 @@ void Controller::update_camera_request()
     }
 }
 
-void Controller::set_interaction_style(std::unique_ptr<InteractionStyle> new_style)
+std::optional<glm::vec2> Controller::operation_centre()
 {
-    if (new_style)
-        m_interaction_style = std::move(new_style);
-    else
-        m_interaction_style = std::make_unique<InteractionStyle>();
+    if (m_animation_style) {
+        return m_animation_style->operation_centre();
+    }
+    return m_interaction_style->operation_centre();
 }
 
-void Controller::set_animation_style(std::unique_ptr<InteractionStyle> new_style)
+std::optional<float> Controller::operation_centre_distance()
 {
-    if (new_style)
-        m_animation_style = std::move(new_style);
-    else
-        m_animation_style = std::make_unique<InteractionStyle>();
-}
-
-std::optional<glm::vec2> Controller::get_operation_centre(){
     if (m_animation_style) {
-        return m_animation_style->get_operation_centre();
+        return m_animation_style->operation_centre_distance(m_definition);
     }
-    return m_interaction_style->get_operation_centre();
-}
-
-std::optional<float> Controller::get_operation_centre_distance(){
-    if (m_animation_style) {
-        return m_animation_style->get_operation_centre_distance(m_definition);
-    }
-    return m_interaction_style->get_operation_centre_distance(m_definition);
+    return m_interaction_style->operation_centre_distance(m_definition);
 }
 
 const Definition& Controller::definition() const
@@ -253,6 +260,4 @@ void Controller::set_definition(const Definition& new_definition)
 
     m_definition = new_definition;
     update();
-}
-
 }

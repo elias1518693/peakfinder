@@ -22,12 +22,16 @@
 #include <memory>
 
 #include <QObject>
-
 #include <glm/glm.hpp>
 
-#include "../event_parameter.h"
+#include "AnimationStyle.h"
 #include "Definition.h"
 #include "InteractionStyle.h"
+#include "nucleus/event_parameter.h"
+
+namespace nucleus {
+class DataQuerier;
+}
 
 namespace nucleus::camera {
 class AbstractDepthTester;
@@ -71,6 +75,7 @@ private:
 
     Definition m_definition;
     AbstractDepthTester* m_depth_tester;
+    DataQuerier* m_data_querier;
     std::unique_ptr<InteractionStyle> m_interaction_style;
     std::unique_ptr<InteractionStyle> m_animation_style;
     std::chrono::steady_clock::time_point m_last_frame_time;
