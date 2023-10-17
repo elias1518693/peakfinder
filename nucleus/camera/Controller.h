@@ -40,7 +40,7 @@ class Controller : public QObject
 {
     Q_OBJECT
 public:
-    explicit Controller(const Definition& camera, AbstractDepthTester* depth_tester);
+    explicit Controller(const Definition& camera, AbstractDepthTester* depth_tester, DataQuerier* data_querier);
 
     [[nodiscard]] const Definition& definition() const;
     std::optional<glm::vec2> get_operation_centre();
@@ -52,6 +52,7 @@ public slots:
     void set_viewport(const glm::uvec2& new_viewport);
     void set_latitude_longitude(double latitude, double longitude);
     void set_latitude_longitude_altitude(double latitude, double longitude, double alt);
+    void refine_altitude();
     void set_field_of_view(float fov_degrees);
     void move(const glm::dvec3& v);
     void orbit(const glm::dvec3& centre, const glm::dvec2& degrees);
@@ -77,7 +78,7 @@ private:
     AbstractDepthTester* m_depth_tester;
     DataQuerier* m_data_querier;
     std::unique_ptr<InteractionStyle> m_interaction_style;
-    std::unique_ptr<InteractionStyle> m_animation_style;
+    std::unique_ptr<AnimationStyle> m_animation_style;
     std::chrono::steady_clock::time_point m_last_frame_time;
 };
 

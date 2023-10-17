@@ -50,7 +50,7 @@ Controller::Controller(AbstractRenderWindow* render_window)
 
     m_camera_controller
         = std::make_unique<nucleus::camera::Controller>(nucleus::camera::Definition(),
-            m_render_window->depth_tester());
+                                                        m_render_window->depth_tester(), m_data_querier.get());
 
     m_terrain_service = std::make_unique<TileLoadService>("https://alpinemaps.cg.tuwien.ac.at/tiles/alpine_png/", TileLoadService::UrlPattern::ZXY, ".png");
     //    m_ortho_service.reset(new TileLoadService("https://tiles.bergfex.at/styles/bergfex-osm/", TileLoadService::UrlPattern::ZXY_yPointingSouth, ".jpeg"));
@@ -76,7 +76,8 @@ Controller::Controller(AbstractRenderWindow* render_window)
     m_data_querier = std::make_unique<DataQuerier>(&m_tile_scheduler->ram_cache());
     m_camera_controller = std::make_unique<nucleus::camera::Controller>(
         nucleus::camera::stored_positions::oestl_hochgrubach_spitze(),
-        m_render_window->depth_tester());
+        m_render_window->depth_tester(),
+        m_data_querier.get());
     {
         auto* sch = m_tile_scheduler.get();
         SlotLimiter* sl = new SlotLimiter(sch);
@@ -89,9 +90,11 @@ Controller::Controller(AbstractRenderWindow* render_window)
         connect(qa, &QuadAssembler::tile_requested, la, &LayerAssembler::load);
         connect(la, &LayerAssembler::tile_requested, m_ortho_service.get(), &TileLoadService::load);
         connect(la, &LayerAssembler::tile_requested, m_terrain_service.get(), &TileLoadService::load);
-
+        //connect(sch, &Scheduler::all_quads_loaded, m_camera_controller.get(), &nucleus::camera::Controller::refine_altitude);
+        connect(la, &LayerAssembler::tile_loaded, m_camera_controller.get(), &nucleus::camera::Controller::refine_altitude);
         connect(sch, &Scheduler::all_quads_loaded, m_render_window, &AbstractRenderWindow::store_next_image);
         connect(sch, &Scheduler::all_quads_loaded, sch, &Scheduler::persist_tiles);
+
         connect(m_ortho_service.get(), &TileLoadService::load_finished, la, &LayerAssembler::deliver_ortho);
         connect(m_terrain_service.get(), &TileLoadService::load_finished, la, &LayerAssembler::deliver_height);
         connect(la, &LayerAssembler::tile_loaded, qa, &QuadAssembler::deliver_tile);
@@ -118,6 +121,7 @@ Controller::Controller(AbstractRenderWindow* render_window)
     m_tile_scheduler->moveToThread(m_scheduler_thread.get());
     m_scheduler_thread->start();
 #endif
+
     connect(m_render_window, &AbstractRenderWindow::key_pressed, m_camera_controller.get(), &nucleus::camera::Controller::key_press);
     connect(m_render_window, &AbstractRenderWindow::key_released, m_camera_controller.get(), &nucleus::camera::Controller::key_release);
     connect(m_render_window, &AbstractRenderWindow::update_camera_requested, m_camera_controller.get(), &nucleus::camera::Controller::update_camera_request);

@@ -31,9 +31,11 @@
 using namespace nucleus::camera;
 
 Controller::Controller(const Definition& camera,
-                       AbstractDepthTester* depth_tester)
+                       AbstractDepthTester* depth_tester,
+                       DataQuerier* data_querier)
     : m_definition(camera)
     , m_depth_tester(depth_tester)
+    , m_data_querier(data_querier)
     , m_interaction_style(std::make_unique<OrbitInteraction>())
 {
 }
@@ -59,11 +61,23 @@ void Controller::set_viewport(const glm::uvec2& new_viewport)
 
 void Controller::set_latitude_longitude(double latitude, double longitude)
 {
-    const auto xyz_world_space = srs::lat_long_to_world({ latitude, longitude});
+    const auto xyz_world_space = srs::lat_long_alt_to_world({ latitude, longitude,  m_data_querier->get_altitude({latitude, longitude})});
     move({ xyz_world_space.x - m_definition.position().x,
         xyz_world_space.y - m_definition.position().y,
-        0.0
+       xyz_world_space.z - m_definition.position().z
     });
+}
+
+void Controller::refine_altitude()
+{
+    qDebug()<<"refining altitude";
+    float altitude = m_data_querier->get_altitude(srs::world_to_lat_long({m_definition.position().x, m_definition.position().y}));
+
+    move({ 0,
+        0,
+        altitude - m_definition.position().z
+    });
+
 }
 
 void Controller::set_latitude_longitude_altitude(double latitude, double longitude, double altitude)
@@ -72,7 +86,14 @@ void Controller::set_latitude_longitude_altitude(double latitude, double longitu
     move({ xyz_world_space.x - m_definition.position().x,
         xyz_world_space.y - m_definition.position().y,
          xyz_world_space.z - m_definition.position().z
-         });
+         });    const auto xy_world_space = srs::lat_long_to_world({latitude, longitude});
+    const auto look_at_point = glm::dvec3(xy_world_space,
+                                          m_data_querier->get_altitude({latitude, longitude}));
+    const auto camera_position = look_at_point + glm::normalize(glm::dvec3{0, -1, 1}) * 5000.;
+    auto end_camera = m_definition;
+    end_camera.look_at(camera_position, look_at_point);
+    m_animation_style = std::make_unique<LinearCameraAnimation>(m_definition, end_camera);
+    update();
 }
 
 void Controller::set_field_of_view(float fov_degrees)
