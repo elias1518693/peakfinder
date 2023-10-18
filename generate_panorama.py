@@ -12,6 +12,8 @@ import torch
 import torchvision.transforms as transforms
 from kornia_moons.feature import *
 import matplotlib.pyplot as plt
+import requests
+import json
 def load_torch_image(fname, target_size):
     # Load the image using OpenCV
     img = cv2.imread(fname)
@@ -62,7 +64,6 @@ def calculate_fov(focal, lenswidth):
     fov = (2 * math.atan(lenswidth / (2 * focal))) * 180 / math.pi
     return fov
 
-
 def readExif(file_path):
     with open(file_path, 'rb') as f:
         # Read EXIF data
@@ -79,6 +80,7 @@ def readExif(file_path):
             height = exif_data.get('GPS GPSAltitude')
             focal_length = exif_data.get('EXIF FocalLength')
             camera_model = exif_data.get('Image Model')
+            print(focal_length)
             if "/" in str(focal_length.values[0]):
                 divisor, divident = str(focal_length.values[0]).split("/")
                 focal_length = float(str(divisor))/float(str(divident));
@@ -91,12 +93,19 @@ def readExif(file_path):
 
             # Calculate FOV
             lenswidth = 35.9
+            camera_model = str(camera_model)
             if camera_model == "SONY":
                 lenswidth = 35.9
             elif camera_model == "HMD Global":
                 lenswidth = 5.839
+            elif str(camera_model) == "Nokia 8":
+                lenswidth = 8.19
+            elif camera_model == "Pixel 6":
+                lenswidth = 8.19
+            print(camera_model)
+            print(lenswidth)
+            
             fov = calculate_fov(focal_length, lenswidth)  # Pass sensor_width as None for now
-            fov = 70
             # Move file to position subdirectory
             return f" {latitude_dd} {longitude_dd} {height_dd} {fov}"
 
@@ -104,7 +113,6 @@ def readExif(file_path):
 def start_renderer(renderer_path, image_path, rotate_degrees):
     try:
         parameters = readExif(image_path)
-        orientation = 25.0
         i = 0
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
@@ -122,6 +130,8 @@ def start_renderer(renderer_path, image_path, rotate_degrees):
     except Exception as e:
         print("Error:", str(e))
         return -1
+
+
         
 def start_matching(image_path, rotate_degrees):
     i = 0
@@ -134,7 +144,9 @@ def start_matching(image_path, rotate_degrees):
     device = K.utils.get_cuda_device_if_available()
     if not os.path.exists('./matches'):
         os.makedirs('matches')
-    while i <= 360:
+    allImages = []
+    while i >= -360:
+        allImages.append(cv2.imread(f"rendered_images/{file_name}_{i}_d{file_extension}"))
         new_image_path = f"rendered_images/{file_name}_{i}_d{file_extension}"
         matched_image_path = f"matches/{file_name}_{i}_d_matched{file_extension}"
         i += rotate_degrees
@@ -151,9 +163,12 @@ def start_matching(image_path, rotate_degrees):
             correspondences = matcher(input_dict)
         mkpts0 = correspondences['keypoints0'].numpy()
         mkpts1 = correspondences['keypoints1'].numpy()
+        if mkpts0.size < 0 or mkpts1.size < 0:
+            continue
         H, inliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
         inliers = inliers > 0
-        
+        if(inliers.size < 0):
+            continue
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
         draw_LAF_matches(
@@ -173,11 +188,6 @@ def start_matching(image_path, rotate_degrees):
                    'feature_color': (0.2, 0.5, 1), 'vertical': False},
                    ax=ax,)
         plt.savefig(matched_image_path)
-        
-        num, Rs, Ts, Ns  = cv2.decomposeHomographyMat(H, np.eye(3))
-        
-        # Print the rotation in degrees
-        print(f"Rotation at {i} degrees: {Rs} degrees")
 
 if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_5_0_MinGW_64_bit-Release/plain_renderer')
