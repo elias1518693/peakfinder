@@ -100,6 +100,7 @@ int main(int argc, char* argv[])
     QObject::connect(&glWindow, &Window::touch_made, controller.camera_controller(), &nucleus::camera::Controller::touch);
     QObject::connect(&glWindow, &Window::resized, controller.camera_controller(), [&controller](glm::uvec2 new_size) {
         controller.camera_controller()->set_viewport(new_size);
+
     });
 
 #if (defined(__linux) && !defined(__ANDROID__)) || defined(_WIN32) || defined(_WIN64)
@@ -109,10 +110,10 @@ int main(int argc, char* argv[])
 #endif
 
         glWindow.render_window()->setFileName(argv[1]);
-        controller.camera_controller()->set_latitude_longitude_altitude(std::atof(argv[2]),std::atof(argv[3]), std::atof(argv[4]));
+        controller.camera_controller()->set_latitude_longitude(std::atof(argv[2]),std::atof(argv[3]));
         controller.camera_controller()->set_field_of_view(std::atof(argv[5]));
         controller.camera_controller()->set_view_direction(glm::dvec2(std::atof(argv[6]), std::atof(argv[7])));
-
+        controller.camera_controller()->refine_altitude();
     // in web assembly, the gl window is resized before it is connected. need to set viewport manually.
     // native, however, glWindow has a zero size at this point.
     if (glWindow.width() > 0 && glWindow.height() > 0)
