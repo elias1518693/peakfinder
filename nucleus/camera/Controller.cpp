@@ -71,11 +71,12 @@ void Controller::set_latitude_longitude(double latitude, double longitude)
 void Controller::refine_altitude()
 {
     qDebug()<<"refining altitude";
-    float altitude = m_data_querier->get_altitude(srs::world_to_lat_long({m_definition.position().x, m_definition.position().y}));
+    const auto xy_real_space = srs::world_to_lat_long({m_definition.position().x, m_definition.position().y});
+    const auto xyz_world_space = srs::lat_long_alt_to_world({xy_real_space.x, xy_real_space.y, m_data_querier->get_altitude(xy_real_space)});
 
     move({ 0,
         0,
-        altitude - m_definition.position().z
+        xyz_world_space.z - m_definition.position().z
     });
 
 }
