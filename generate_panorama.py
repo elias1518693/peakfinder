@@ -126,11 +126,27 @@ def start_renderer(renderer_path, image_path, rotate_degrees):
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
             process.wait()        
 
-
     except Exception as e:
         print("Error:", str(e))
         return -1
+        
+        
+def render_result(renderer_path, image_path, angle):
+    try:
+        parameters = readExif(image_path)
+        i = 0
+        file_name, file_extension = os.path.splitext(os.path.basename(image_path))
+        processes = []  # List to store subprocess objects
 
+        orientation = f" {angle} 45"
+        new_file_name = f"{file_name}_result_d{file_extension}"
+        cmd = f"{renderer_path} {new_file_name} {parameters} {orientation}"
+        print("Running:", cmd)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        process.wait()        
+    except Exception as e:
+        print("Error:", str(e))
+        return -1
 
         
 def start_matching(image_path, rotate_degrees):
@@ -140,13 +156,14 @@ def start_matching(image_path, rotate_degrees):
     file_name, file_extension = os.path.splitext(os.path.basename(image_path))
     original_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)  # Load the original image in grayscale
     best_match_image_path = ""
+    best_match_image_degree = 0.0
     best_match_prob = 0.0
+    best_match_angle = 0.0
+    best_match_image_deg = 0
     device = K.utils.get_cuda_device_if_available()
     if not os.path.exists('./matches'):
         os.makedirs('matches')
-    allImages = []
-    while i >= -360:
-        allImages.append(cv2.imread(f"rendered_images/{file_name}_{i}_d{file_extension}"))
+    while i <= 360:
         new_image_path = f"rendered_images/{file_name}_{i}_d{file_extension}"
         matched_image_path = f"matches/{file_name}_{i}_d_matched{file_extension}"
         i += rotate_degrees
@@ -163,19 +180,34 @@ def start_matching(image_path, rotate_degrees):
             correspondences = matcher(input_dict)
         mkpts0 = correspondences['keypoints0'].numpy()
         mkpts1 = correspondences['keypoints1'].numpy()
-        if mkpts0.size < 0 or mkpts1.size < 0:
+        if mkpts0.size < 10 or mkpts1.size < 10:
             continue
-        H, inliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+        H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
         inliers = inliers > 0
         if(inliers.size < 0):
             continue
+        if H is None or inliers is None:
+            continue
+        
+        # Normalize the homography matrix
+        H = H / H[2, 2]
+        
+        # Calculate the rotation angle
+        theta = np.arctan2(H[1, 0], H[0, 0])
+        angle = np.degrees(theta)  # Convert radians to degrees
+        match_prob = inliers.size
+        # Update the best match
+        if match_prob > best_match_prob or best_match_image_path == "":
+            best_match_image_path = new_image_path
+            best_match_angle = angle
+            best_match_image_deg = i
+            best_match_prob = match_prob
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
         draw_LAF_matches(
         KF.laf_from_center_scale_ori(torch.from_numpy(mkpts0).view(1,-1, 2),
                                     torch.ones(mkpts0.shape[0]).view(1,-1, 1, 1),
                                     torch.ones(mkpts0.shape[0]).view(1,-1, 1)),
-
         KF.laf_from_center_scale_ori(torch.from_numpy(mkpts1).view(1,-1, 2),
                                     torch.ones(mkpts1.shape[0]).view(1,-1, 1, 1),
                                     torch.ones(mkpts1.shape[0]).view(1,-1, 1)),
@@ -188,13 +220,17 @@ def start_matching(image_path, rotate_degrees):
                    'feature_color': (0.2, 0.5, 1), 'vertical': False},
                    ax=ax,)
         plt.savefig(matched_image_path)
+    # Print the results
+    print(f"Best Match Image Path: {best_match_image_path}")
+    print(f"Rotation Angle: {best_match_angle} degrees")
+    return best_match_angle + best_match_image_deg
 
 if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_5_0_MinGW_64_bit-Release/plain_renderer')
     # Path to plain_renderer.exe
     renderer_path = "plain_renderer.exe "
     image_path = select_image()
-    rotate_degrees = 45
+    rotate_degrees = 25
     if not image_path:
         print("No image selected. Exiting.")
         exit()
@@ -202,6 +238,8 @@ if __name__ == "__main__":
     # Start the renderer with the specified parameters and select an image
     start_renderer(renderer_path,  image_path, rotate_degrees)
     
-    start_matching(image_path, rotate_degrees)
+    angle = start_matching(image_path, rotate_degrees)
+    
+    render_result(renderer_path, image_path, angle)
     
     
