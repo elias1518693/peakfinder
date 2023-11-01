@@ -11,6 +11,7 @@ import kornia as K
 import torch
 import torchvision.transforms as transforms
 from kornia_moons.feature import *
+from PIL import Image
 import matplotlib.pyplot as plt
 import requests
 import json
@@ -60,9 +61,46 @@ def height_to_dd(height):
         height_dd = height
     return height_dd
 
-def calculate_fov(focal, lenswidth):
-    fov = (2 * math.atan(lenswidth / (2 * focal))) * 180 / math.pi
+def calculate_fov(tags, image_dimensions):
+    # Extract focal length
+    focal_length_tag = tags.get('EXIF FocalLength')
+    focal_length = 0
+    focal_length_35mm_tag = tags.get('EXIF FocalLengthIn35mmFilm')
+    if focal_length_35mm_tag is not None and float(str(focal_length_35mm_tag)) > 0:
+        focal_length = float(str(focal_length_35mm_tag))
+    else:
+        if focal_length_tag is not None:
+            if "/" in str(focal_length_tag.values[0]):
+                divisor, divident = str(focal_length_tag.values[0]).split("/")
+                focal_length = float(str(divisor))/float(str(divident));
+            else:
+                focal_length = float(str(focal_length_tag.values[0]))
+        else:
+            focal_length = 4.15  # typical value for smartphone cameras in mm
+    
+    # Decide sensor size based on camera make and model
+    make = str(tags.get('Image Make', ''))
+    model = str(tags.get('Image Model', ''))
+    
+    # Decide if it's a smartphone camera or a regular one
+    if 'iphone' in model.lower() or 'samsung' in model.lower() or 'nokia' in model.lower() or 'pixel' in model.lower():
+        sensor_width = 6.16  # Assume sensor size for a typical smartphone camera in mm
+        sensor_height = 4.62 # Typical sensor height for smartphones in mm
+        print('phone camera')
+    else:
+        sensor_width = 35.9  # Assume sensor size for a full-frame camera in mm
+        sensor_height = 24   # Typical sensor height for full-frame cameras in mm
+        print('normal camera')
+    # Check orientation and calculate FOV
+    
+    width, height = image_dimensions
+    if height > width:  # Portrait orientation
+        fov = 2 * math.degrees(math.atan2(sensor_height / 2, focal_length))
+    else:  # Landscape orientation
+        fov = 2 * math.degrees(math.atan2(sensor_width / 2, focal_length))
+
     return fov
+
 
 def readExif(file_path):
     with open(file_path, 'rb') as f:
@@ -78,41 +116,22 @@ def readExif(file_path):
             latitude = exif_data.get('GPS GPSLatitude')
             longitude = exif_data.get('GPS GPSLongitude')
             height = exif_data.get('GPS GPSAltitude')
-            focal_length = exif_data.get('EXIF FocalLength')
-            camera_model = exif_data.get('Image Model')
-            print(focal_length)
-            if "/" in str(focal_length.values[0]):
-                divisor, divident = str(focal_length.values[0]).split("/")
-                focal_length = float(str(divisor))/float(str(divident));
-            else:
-                focal_length = float(str(focal_length))
+      
             # Convert Degrees Minutes Seconds to decimal degrees
             latitude_dd = dms_to_dd(latitude)
             longitude_dd = dms_to_dd(longitude)
             height_dd = height_to_dd(height)
-
-            # Calculate FOV
-            lenswidth = 35.9
-            camera_model = str(camera_model)
-            if camera_model == "SONY":
-                lenswidth = 35.9
-            elif camera_model == "HMD Global":
-                lenswidth = 5.839
-            elif str(camera_model) == "Nokia 8":
-                lenswidth = 8.19
-            elif camera_model == "Pixel 6":
-                lenswidth = 8.19
-            print(camera_model)
-            print(lenswidth)
-            
-            fov = calculate_fov(focal_length, lenswidth)  # Pass sensor_width as None for now
+            img = Image.open(file_path)
+            dims = img.size         
+            fov = calculate_fov(exif_data, dims)  # Pass sensor_width as None for now
+            print(fov)
             # Move file to position subdirectory
-            return f" {latitude_dd} {longitude_dd} {height_dd} {fov}"
+            return latitude_dd, longitude_dd, height_dd, fov
 
 
-def start_renderer(renderer_path, image_path, rotate_degrees):
-    try:
-        parameters = readExif(image_path)
+def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, height, fov):
+    try:     
+        parameters = f" {lat} {long} {height} {fov}"
         i = 0
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
@@ -131,9 +150,9 @@ def start_renderer(renderer_path, image_path, rotate_degrees):
         return -1
         
         
-def render_result(renderer_path, image_path, angle):
+def render_result(renderer_path, image_path, angle, lat, long, height, fov):
     try:
-        parameters = readExif(image_path)
+        parameters = f" {lat} {long} {height} {fov}"
         i = 0
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
@@ -230,16 +249,17 @@ if __name__ == "__main__":
     # Path to plain_renderer.exe
     renderer_path = "plain_renderer.exe "
     image_path = select_image()
-    rotate_degrees = 25
+    
     if not image_path:
         print("No image selected. Exiting.")
         exit()
-                        
+    lat, long, height, fov = readExif(image_path)   
+    rotate_degrees = round(fov - 10.0)    
     # Start the renderer with the specified parameters and select an image
-    start_renderer(renderer_path,  image_path, rotate_degrees)
+    start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
     
     angle = start_matching(image_path, rotate_degrees)
     
-    render_result(renderer_path, image_path, angle)
+    render_result(renderer_path, image_path, angle, lat, long, height, fov)
     
     
