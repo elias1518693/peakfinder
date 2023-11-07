@@ -207,7 +207,7 @@ void Scheduler::send_quad_requests()
     });
     if(currently_active_tiles.size() == 0){
         qDebug()<<"alls quads loaded";
-        emit all_quads_loaded();
+        QTimer::singleShot(50,[this](){emit all_quads_loaded();});
     }
     emit quads_requested(currently_active_tiles);
 }
