@@ -179,13 +179,14 @@ def start_matching(image_path, rotate_degrees):
     best_match_prob = 0.0
     best_match_angle = 0.0
     best_match_image_deg = 0
+    best_match_h = None
     device = K.utils.get_cuda_device_if_available()
     if not os.path.exists('./matches'):
         os.makedirs('matches')
     while i <= 360:
         new_image_path = f"rendered_images/{file_name}_{i}_d{file_extension}"
         matched_image_path = f"matches/{file_name}_{i}_d_matched{file_extension}"
-        i += rotate_degrees
+
 
         img1 = load_torch_image(image_path, target_size)
         img2 = load_torch_image(new_image_path, target_size)
@@ -200,12 +201,15 @@ def start_matching(image_path, rotate_degrees):
         mkpts0 = correspondences['keypoints0'].numpy()
         mkpts1 = correspondences['keypoints1'].numpy()
         if mkpts0.size < 10 or mkpts1.size < 10:
+            i += rotate_degrees
             continue
         H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
         inliers = inliers > 0
         if(inliers.size < 0):
+            i += rotate_degrees
             continue
         if H is None or inliers is None:
+            i += rotate_degrees
             continue
         
         # Normalize the homography matrix
@@ -221,6 +225,7 @@ def start_matching(image_path, rotate_degrees):
             best_match_angle = angle
             best_match_image_deg = i
             best_match_prob = match_prob
+            best_match_h = H
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
         draw_LAF_matches(
@@ -239,9 +244,31 @@ def start_matching(image_path, rotate_degrees):
                    'feature_color': (0.2, 0.5, 1), 'vertical': False},
                    ax=ax,)
         plt.savefig(matched_image_path)
+        i += rotate_degrees
     # Print the results
     print(f"Best Match Image Path: {best_match_image_path}")
     print(f"Rotation Angle: {best_match_angle} degrees")
+    if best_match_h is not None:
+        # Load the best match image
+        best_match_image = cv2.imread(best_match_image_path)
+        # Load the original image
+        original_image_color = cv2.imread(original_path)
+        # Assuming the original image is not grayscale because we're going to overlay it
+        h, w = original_image_color.shape[:2]
+        # Apply the warpPerspective function with the correct parameters
+        warped_image = cv2.warpPerspective(best_match_image, best_match_h, (w, h))
+
+        # Overlay the warped image onto the original image
+        # You can adjust the alpha value to make the overlay transparent
+        alpha = 0.5
+        overlay_image = cv2.addWeighted(original_image_color, 1 - alpha, warped_image, alpha, 0)
+
+        # Save or show the overlay image
+        overlay_image_path = f"overlay_{file_name}.png"
+        cv2.imwrite(overlay_image_path, overlay_image)  # Saving the overlay image
+        # cv2.imshow("Overlay Image", overlay_image)  # If you want to display the image
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()  # Make sure to destroy all windows if you've used cv2.imshow
     return best_match_angle + best_match_image_deg
 
 if __name__ == "__main__":
