@@ -68,6 +68,9 @@ def calculate_fov(tags, image_dimensions):
     focal_length_35mm_tag = tags.get('EXIF FocalLengthIn35mmFilm')
     if focal_length_35mm_tag is not None and float(str(focal_length_35mm_tag)) > 0:
         focal_length = float(str(focal_length_35mm_tag))
+        fov = 2 * math.degrees(math.atan2(35.9 / 2, focal_length))
+        print("using 35mm focal length")
+        return fov
     else:
         if focal_length_tag is not None:
             if "/" in str(focal_length_tag.values[0]):
@@ -100,7 +103,7 @@ def calculate_fov(tags, image_dimensions):
         fov = 2 * math.degrees(math.atan2(sensor_width / 2, focal_length))
 
     return fov
-
+    
 
 def readExif(file_path):
     with open(file_path, 'rb') as f:
@@ -130,7 +133,9 @@ def readExif(file_path):
 
 
 def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, height, fov):
-    try:     
+    try: 
+        img = Image.open(image_path)
+        width, height = img.size     
         parameters = f" {lat} {long} {height} {fov}"
         i = 0
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
@@ -152,6 +157,8 @@ def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, height,
         
 def render_result(renderer_path, image_path, angle, lat, long, height, fov):
     try:
+        img = Image.open(image_path)
+        width, height = img.size     
         parameters = f" {lat} {long} {height} {fov}"
         i = 0
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
@@ -167,7 +174,7 @@ def render_result(renderer_path, image_path, angle, lat, long, height, fov):
         print("Error:", str(e))
         return -1
 
-        
+  
 def start_matching(image_path, rotate_degrees):
     i = 0
     target_size = (512, 512)
@@ -204,6 +211,7 @@ def start_matching(image_path, rotate_degrees):
             i += rotate_degrees
             continue
         H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+        
         inliers = inliers > 0
         if(inliers.size < 0):
             i += rotate_degrees
@@ -213,11 +221,12 @@ def start_matching(image_path, rotate_degrees):
             continue
         
         # Normalize the homography matrix
-        H = H / H[2, 2]
+        #H = H / H[2, 2]
         
         # Calculate the rotation angle
         theta = np.arctan2(H[1, 0], H[0, 0])
         angle = np.degrees(theta)  # Convert radians to degrees
+        print(angle)
         match_prob = inliers.size
         # Update the best match
         if match_prob > best_match_prob or best_match_image_path == "":
@@ -283,7 +292,7 @@ if __name__ == "__main__":
     lat, long, height, fov = readExif(image_path)   
     rotate_degrees = round(fov - 10.0)    
     # Start the renderer with the specified parameters and select an image
-    start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
+    #start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
     
     angle = start_matching(image_path, rotate_degrees)
     

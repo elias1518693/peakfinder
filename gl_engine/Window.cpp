@@ -104,9 +104,6 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()->extraFunctions();
     f->glEnable(GL_CULL_FACE);
     f->glCullFace(GL_BACK);
-    if(m_store_image){
-        m_framebuffer->resize(glm::dvec2(m_framebuffer->size().x * 4, m_framebuffer->size().y * 4));
-    }
     m_camera.set_viewport_size(m_framebuffer->size());
 
     // DEPTH BUFFER
