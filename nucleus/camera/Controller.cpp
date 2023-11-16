@@ -72,26 +72,12 @@ void Controller::refine_altitude()
 {
     qDebug() << "refining altitude";
 
-    // Define the number of points and the radius around the current position to consider for altitude refinement
-    const int num_points = 32; // for example, the 4 cardinal points and 4 ordinal points (NE, SE, SW, NW)
-    const double delta = 0.000275; // Represents a small geographical distance, adjust as needed
-
     const auto center = srs::world_to_lat_long({m_definition.position().x, m_definition.position().y});
-    auto max_altitude = 0.0;
-    for (int i = 0; i < num_points; ++i)
-    {
-        double angle = (double)i / (double)num_points * 2.0 * M_PI;
-        double adjusted_x = center.x + delta * std::cos(angle);
-        double adjusted_y = center.y + delta * std::sin(angle);
+    qDebug()<<m_data_querier->get_altitude({center});
+    auto altitude = srs::lat_long_alt_to_world(glm::dvec3(center.x, center.y, m_data_querier->get_altitude({center}) + 20.0f));
 
-        // Get altitude for the adjusted position
-        auto altitude = srs::lat_long_alt_to_world({adjusted_x, adjusted_y, m_data_querier->get_altitude({adjusted_x, adjusted_y})}).z;
-        max_altitude = std::max(max_altitude, altitude);
-    }
-    auto altitude = srs::lat_long_alt_to_world({center, m_data_querier->get_altitude({center})}).z;
-    max_altitude = (altitude + max_altitude)/2.0;
     // Move to the new altitude (maximum altitude)
-    move({ 0, 0, max_altitude - m_definition.position().z });
+    move({ 0, 0, altitude.z - m_definition.position().z });
 }
 
 void Controller::set_latitude_longitude_altitude(double latitude, double longitude, double altitude)
@@ -99,7 +85,7 @@ void Controller::set_latitude_longitude_altitude(double latitude, double longitu
     const auto xyz_world_space = srs::lat_long_alt_to_world({ latitude, longitude, altitude});
     move({ xyz_world_space.x - m_definition.position().x,
         xyz_world_space.y - m_definition.position().y,
-         xyz_world_space.z - m_definition.position().z
+        xyz_world_space.z - m_definition.position().z
          });    const auto xy_world_space = srs::lat_long_to_world({latitude, longitude});
     const auto look_at_point = glm::dvec3(xy_world_space,
                                           m_data_querier->get_altitude({latitude, longitude}));
@@ -117,6 +103,8 @@ void Controller::set_field_of_view(float fov_degrees)
     m_definition.set_field_of_view(fov_degrees);
     update();
 }
+
+
 
 void Controller::move(const glm::dvec3& v)
 {

@@ -110,10 +110,17 @@ int main(int argc, char* argv[])
 #endif
 
         glWindow.render_window()->setFileName(argv[1]);
-        controller.camera_controller()->set_latitude_longitude(std::atof(argv[2]),std::atof(argv[3]));
-        controller.camera_controller()->set_field_of_view(std::atof(argv[5]));
+        glWindow.render_window()->set_permissible_screen_space_error(0);
+        controller.camera_controller()->set_latitude_longitude_altitude(std::atof(argv[2]),std::atof(argv[3]), std::atof(argv[4]));
+        float verticalFOV = glm::degrees(2.0f * atan(tan(glm::radians(std::atof(argv[5])) / 2.0f) * ((float)std::atof(argv[9])/(std::atof(argv[8])))));
+        qDebug()<<verticalFOV;
+        controller.camera_controller()->set_field_of_view(verticalFOV);
         controller.camera_controller()->set_view_direction(glm::dvec2(std::atof(argv[6]), std::atof(argv[7])));
         controller.camera_controller()->refine_altitude();
+        controller.camera_controller()->set_near_plane(1.0f);
+        glWindow.setFlag(Qt::FramelessWindowHint);
+        glWindow.resize(std::atof(argv[8]), (std::atof(argv[9])));
+        //controller.camera_controller()->set_projection_matrix(std::atof(argv[5]),(float)std::atof(argv[8])/(float)(std::atof(argv[9])));
     // in web assembly, the gl window is resized before it is connected. need to set viewport manually.
     // native, however, glWindow has a zero size at this point.
     if (glWindow.width() > 0 && glWindow.height() > 0)

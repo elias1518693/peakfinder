@@ -90,6 +90,7 @@ private:
 
     int m_frame = 0;
     bool m_store_image = false;
+    bool m_was_drawn = false;
     bool m_initialised = false;
     QString m_file_name;
     TimePoint m_frame_start;

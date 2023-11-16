@@ -40,6 +40,6 @@ public:
 private:
     utils::AabbDecoratorPtr m_aabb_decorator;
     TileSet m_available_tiles;
-    float m_permissible_screen_space_error = 2.0;
+    float m_permissible_screen_space_error = 0.0;
 };
 }

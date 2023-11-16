@@ -15,6 +15,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import requests
 import json
+
 def load_torch_image(fname, target_size):
     # Load the image using OpenCV
     img = cv2.imread(fname)
@@ -32,6 +33,73 @@ def select_image():
     root.withdraw()
     file_path = filedialog.askopenfilename(title="Select an image file")
     return file_path
+    
+def change_extension_to_txt(file_path, base_name_replace):
+    """
+    Changes the file extension to .txt and replaces the base name.
+    
+    :param file_path: Path of the original file
+    :param base_name_replace: Tuple containing (string_to_replace, new_string)
+    :return: Path with the new extension and base name
+    """
+    directory, filename = os.path.split(file_path)
+    name, _ = os.path.splitext(filename)  # Splitting off the extension
+    new_name = name.replace(*base_name_replace) + '.txt'  # Replacing base name and adding new extension
+    return os.path.join(directory, new_name)   
+
+def yaw_to_compass(yaw_radians):
+    """
+    Converts yaw from radians to degrees with north as 0 degrees.
+
+    :param yaw_radians: Yaw in radians, where 0 radians is west
+    :return: Yaw in degrees with north as 0 degrees
+    """
+    # Convert from radians to degrees
+    yaw_degrees = yaw_radians * (180 / math.pi)
+
+    yaw_degrees_adjusted = yaw_degrees + 90
+
+    # Normalize to 0 - 360 degrees range
+    yaw_degrees_normalized = yaw_degrees_adjusted % 360
+
+    return yaw_degrees_normalized
+   
+def read_info(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+            # Assuming the file structure is consistent and correct
+            fov = float(lines[5].strip())
+            height = float(lines[4].strip())
+            original_latitude = float(lines[2].strip())
+            original_longitude = float(lines[3].strip())
+            print(yaw_to_compass(float(lines[1].strip().split()[0])))
+            return original_latitude, original_longitude,height,  fov
+    except Exception as e:
+        print("Error:", str(e))
+        return None, None, None, None
+
+def scale_to_fit_screen(image_width, image_height, screen_width, screen_height):
+    # Calculate the aspect ratio of both the image and the screen
+    image_aspect_ratio = image_width / image_height
+    screen_aspect_ratio = screen_width / screen_height
+    
+    # Determine if the image needs to be scaled based on width or height
+    if image_aspect_ratio > screen_aspect_ratio:
+        # Scale based on width
+        scaled_width = screen_width
+        scaled_height = scaled_width / image_aspect_ratio
+    else:
+        # Scale based on height
+        scaled_height = screen_height
+        scaled_width = scaled_height * image_aspect_ratio
+    
+    # Ensure that the scaled dimensions are integers and do not exceed the screen size
+    scaled_width = min(screen_width, int(scaled_width))
+    scaled_height = min(screen_height, int(scaled_height))
+    
+    return scaled_width, scaled_height
+
 
 # Create a function to convert from Degrees Minutes Seconds to decimal degrees
 def dms_to_dd(dms):
@@ -132,19 +200,20 @@ def readExif(file_path):
             return latitude_dd, longitude_dd, height_dd, fov
 
 
-def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, height, fov):
+def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, alt, fov):
     try: 
         img = Image.open(image_path)
-        width, height = img.size     
-        parameters = f" {lat} {long} {height} {fov}"
+        width, height = img.size
+        width, height = scale_to_fit_screen(width, height, 1920, 1080)        
+        parameters = f" {lat} {long} {alt} {fov}"
         i = 0
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
 
         while i <= 360:
-            orientation = f" {i} 45"
+            orientation = f" {i} 45" 
             new_file_name = f"{file_name}_{i}_d{file_extension}"
-            cmd = f"{renderer_path} {new_file_name} {parameters} {orientation}"
+            cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
             i += rotate_degrees
             print("Running:", cmd)
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
@@ -155,18 +224,19 @@ def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, height,
         return -1
         
         
-def render_result(renderer_path, image_path, angle, lat, long, height, fov):
+def render_result(renderer_path, image_path, angle, lat, long, alt, fov):
     try:
         img = Image.open(image_path)
-        width, height = img.size     
-        parameters = f" {lat} {long} {height} {fov}"
+        width, height = img.size  
+        width, height = scale_to_fit_screen(width, height, 1920, 1080)        
+        parameters = f" {lat} {long} {alt} {fov}"
         i = 0
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
 
         orientation = f" {angle} 45"
         new_file_name = f"{file_name}_result_d{file_extension}"
-        cmd = f"{renderer_path} {new_file_name} {parameters} {orientation}"
+        cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         process.wait()        
@@ -174,8 +244,74 @@ def render_result(renderer_path, image_path, angle, lat, long, height, fov):
         print("Error:", str(e))
         return -1
 
-  
-def start_matching(image_path, rotate_degrees):
+import numpy as np
+import math
+
+
+def calculate_camera_matrix(horizontal_fov, width, height):
+    """Calculate the camera matrix.
+
+    Args:
+    horizontal_fov (float): Horizontal field of view in degrees.
+    width (int): Width of the image sensor or image in pixels.
+    height (int): Height of the image sensor or image in pixels.
+
+    Returns:
+    numpy.ndarray: Camera matrix.
+    """
+    # Convert horizontal FOV to radians
+    horizontal_fov_rad = math.radians(horizontal_fov)
+
+    # Calculate focal lengths
+    fx = width / (2.0 * math.tan(horizontal_fov_rad / 2.0))
+    vertical_fov_rad = 2.0 * math.atan(math.tan(horizontal_fov_rad / 2.0) * height / width)
+    fy = height / (2.0 * math.tan(vertical_fov_rad / 2.0))
+
+    # Calculate optical center
+    cx = width / 2.0
+    cy = height / 2.0
+
+    # Construct camera matrix
+    camera_matrix = np.array([[fx, 0, cx],
+                              [0, fy, cy],
+                              [0, 0, 1]])
+    return camera_matrix
+def rotation_matrix_to_pitch_yaw_roll(rotation_matrix):
+    """Convert a rotation matrix to pitch, yaw, and roll angles.
+
+    Args:
+    rotation_matrix (numpy.ndarray): 3x3 rotation matrix.
+
+    Returns:
+    tuple: (pitch, yaw, roll) angles in radians.
+    """
+    if rotation_matrix.shape != (3, 3):
+        raise ValueError("Rotation matrix must be 3x3.")
+
+    # Extracting the values from the rotation matrix
+    r11, r12, r13 = rotation_matrix[0, 0], rotation_matrix[0, 1], rotation_matrix[0, 2]
+    r21, r22, r23 = rotation_matrix[1, 0], rotation_matrix[1, 1], rotation_matrix[1, 2]
+    r31, r32, r33 = rotation_matrix[2, 0], rotation_matrix[2, 1], rotation_matrix[2, 2]
+
+    # Calculating yaw, pitch, and roll
+    if r31 != 1 and r31 != -1:
+        pitch = -math.asin(r31)
+        roll = math.atan2(r32 / math.cos(pitch), r33 / math.cos(pitch))
+        yaw = math.atan2(r21 / math.cos(pitch), r11 / math.cos(pitch))
+    else:
+        yaw = 0
+        if r31 == -1:
+            pitch = math.pi / 2
+            roll = yaw + math.atan2(r12, r13)
+        else:
+            pitch = -math.pi / 2
+            roll = -yaw + math.atan2(-r12, -r13)
+
+    return pitch, yaw, roll
+    
+def start_matching(image_path, rotate_degrees, fov):
+    img = Image.open(image_path)
+    width, height = img.size
     i = 0
     target_size = (512, 512)
     original_path = image_path
@@ -210,8 +346,16 @@ def start_matching(image_path, rotate_degrees):
         if mkpts0.size < 10 or mkpts1.size < 10:
             i += rotate_degrees
             continue
+        cameraMatrix = calculate_camera_matrix(fov, width, height)
+
         H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
-        
+        E, mask = cv2.findEssentialMat(mkpts0, mkpts1, cameraMatrix)
+        retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, cameraMatrix)
+        pitch,yaw,roll = rotation_matrix_to_pitch_yaw_roll(R)
+        print(math.degrees(pitch))
+        num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, cameraMatrix)
+        pitch,yaw,roll = rotation_matrix_to_pitch_yaw_roll(Rs[0])
+        print(math.degrees(pitch))
         inliers = inliers > 0
         if(inliers.size < 0):
             i += rotate_degrees
@@ -289,12 +433,20 @@ if __name__ == "__main__":
     if not image_path:
         print("No image selected. Exiting.")
         exit()
-    lat, long, height, fov = readExif(image_path)   
-    rotate_degrees = round(fov - 10.0)    
-    # Start the renderer with the specified parameters and select an image
-    #start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
+
+    info_path = change_extension_to_txt(image_path, ('photo_', 'info_'))
+    if info_path is not None:
+        lat, long, height, fov = read_info(info_path)
     
-    angle = start_matching(image_path, rotate_degrees)
+    if lat is not None:
+        fov = math.degrees(fov)
+    else:
+        lat, long, height, fov = readExif(image_path)   
+    rotate_degrees = round(fov-5)
+    # Start the renderer with the specified parameters and select an image
+    start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
+    
+    angle = start_matching(image_path, rotate_degrees, fov)
     
     render_result(renderer_path, image_path, angle, lat, long, height, fov)
     

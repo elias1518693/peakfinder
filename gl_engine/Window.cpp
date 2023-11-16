@@ -212,6 +212,7 @@ void Window::update_camera(const nucleus::camera::Definition& new_definition)
 {
     //    qDebug("void Window::update_camera(const nucleus::camera::Definition& new_definition)");
     m_camera = new_definition;
+    qDebug()<<new_definition.position().z;
     emit update_requested();
 }
 
@@ -229,7 +230,8 @@ void Window::update_gpu_quads(const std::vector<nucleus::tile_scheduler::tile_ty
 
 void Window::store_next_image()
 {
-    m_store_image = true;
+    QTimer::singleShot(50,[this](){m_store_image = true;});
+    //QTimer::singleShot(1000,[this](){qDebug()<<"needed Help to quit";emit update_requested();});
 }
 
 void Window::setFileName(QString fileName){
