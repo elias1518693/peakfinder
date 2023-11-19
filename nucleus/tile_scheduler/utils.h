@@ -27,8 +27,8 @@
 #include "constants.h"
 #include "nucleus/camera/Definition.h"
 #include "nucleus/srs.h"
-#include "sherpa/TileHeights.h"
-#include "sherpa/geometry.h"
+#include "radix/TileHeights.h"
+#include "radix/geometry.h"
 
 namespace nucleus::tile_scheduler {
 
@@ -140,7 +140,6 @@ namespace utils {
         for (const auto& p : frustum.corners)
             if (aabb.contains(p))
                 return true;
-
         const auto triangles = geometry::clip(geometry::triangulise(aabb), frustum.clipping_planes);
         return !triangles.empty();
     }

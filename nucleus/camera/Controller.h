@@ -1,7 +1,8 @@
-/*****************************************************************************
- * Alpine Terrain Renderer
+ /*****************************************************************************
+ * Alpine Renderer
  * Copyright (C) 2022 Adam Celarek
  * Copyright (C) 2023 Jakob Lindner
+ * Copyright (C) 2023 Gerald Kimmersdorfer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,7 +23,9 @@
 #include <memory>
 
 #include <QObject>
+
 #include <glm/glm.hpp>
+#include <QVector3D>
 
 #include "AnimationStyle.h"
 #include "Definition.h"
@@ -45,6 +48,8 @@ public:
     [[nodiscard]] const Definition& definition() const;
     std::optional<glm::vec2> get_operation_centre();
     std::optional<float> get_operation_centre_distance();
+
+	void report_global_cursor_position(const QPointF& screen_pos);
 
 public slots:
     void set_definition(const Definition& new_definition);
@@ -69,6 +74,7 @@ public slots:
 
 signals:
     void definition_changed(const Definition& new_definition) const;
+    void global_cursor_position_changed(glm::dvec3 pos) const;
 
 private:
     void set_interaction_style(std::unique_ptr<InteractionStyle> new_style);

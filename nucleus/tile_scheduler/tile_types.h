@@ -19,7 +19,7 @@
 #pragma once
 
 #include "nucleus/tile_scheduler/utils.h"
-#include "sherpa/tile.h"
+#include "radix/tile.h"
 
 #include <QByteArray>
 
@@ -104,6 +104,7 @@ struct GpuLayeredTile {
     tile::SrsAndHeightBounds bounds = {};
     std::shared_ptr<const QImage> ortho;
     std::shared_ptr<const nucleus::Raster<uint16_t>> height;
+    std::shared_ptr<const QImage> height_image;
 };
 static_assert(NamedTile<GpuLayeredTile>);
 

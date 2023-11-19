@@ -1,6 +1,7 @@
 /*****************************************************************************
  * Alpine Terrain Renderer
  * Copyright (C) 2023 Adam Celarek
+ * Copyright (C) 2023 Gerald Kimmersdorfer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,12 +35,16 @@ TerrainRenderer::TerrainRenderer()
     m_glWindow = std::make_unique<gl_engine::Window>();
     m_controller = std::make_unique<nucleus::Controller>(m_glWindow.get());
     m_glWindow->initialise_gpu();
+#ifdef ALP_ENABLE_TRACK_OBJECT_LIFECYCLE
     qDebug("TerrainRendererItemRenderer()");
+#endif
 }
 
 TerrainRenderer::~TerrainRenderer()
 {
-    qDebug("~TerrainRendererItemRenderer()");
+#ifdef ALP_ENABLE_TRACK_OBJECT_LIFECYCLE
+    qDebug("~TerrainRenderer()");
+#endif
 }
 
 void TerrainRenderer::synchronize(QQuickFramebufferObject *item)
@@ -50,7 +55,7 @@ void TerrainRenderer::synchronize(QQuickFramebufferObject *item)
     m_window = item->window();
     TerrainRendererItem* i = static_cast<TerrainRendererItem*>(item);
     //        m_controller->camera_controller()->set_virtual_resolution_factor(i->render_quality());
-    m_glWindow->set_permissible_screen_space_error(1.0 / i->render_quality());
+    m_glWindow->set_permissible_screen_space_error(1.0 / i->settings()->render_quality());
     m_controller->camera_controller()->set_viewport({ i->width(), i->height() });
     m_controller->camera_controller()->set_field_of_view(i->field_of_view());
 

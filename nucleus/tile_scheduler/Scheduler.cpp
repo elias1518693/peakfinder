@@ -30,7 +30,7 @@
 
 #include "nucleus/tile_scheduler/utils.h"
 #include "nucleus/utils/tile_conversion.h"
-#include "sherpa/quad_tree.h"
+#include "radix/quad_tree.h"
 
 using namespace nucleus::tile_scheduler;
 
@@ -190,6 +190,9 @@ void Scheduler::update_gpu_quads()
                            if (quad.tiles[i].height->size()) {
                                height_data = quad.tiles[i].height.get();
                            }
+                           auto heightimage = nucleus::utils::tile_conversion::toQImage(*height_data);
+                           gpu_quad.tiles[i].height_image = std::make_shared<QImage>(std::move(heightimage));
+                           //TODO: We dont need height in VBO anymore!!! Delete at some point!!
                            auto heightraster = nucleus::utils::tile_conversion::qImage2uint16Raster(
                                nucleus::utils::tile_conversion::toQImage(*height_data));
                            gpu_quad.tiles[i].height = std::make_shared<nucleus::Raster<uint16_t>>(
@@ -233,14 +236,14 @@ void Scheduler::purge_ram_cache()
 
 void Scheduler::persist_tiles()
 {
-    try {
-        const auto start = std::chrono::steady_clock::now();
-        m_ram_cache.write_to_disk(disk_cache_path());
-        const auto diff = std::chrono::steady_clock::now() - start;
-        if (diff > std::chrono::milliseconds(50))
-            fmt::println(stderr, "Scheduler::persist_tiles took {} for {} quads.", std::chrono::duration_cast<std::chrono::milliseconds>(diff), m_ram_cache.n_cached_objects());
-    } catch (const std::runtime_error& e) {
-        qDebug("Writing tiles to disk into %s failed: %s. Removing all files.", disk_cache_path().c_str(), e.what());
+    const auto start = std::chrono::steady_clock::now();
+    const auto r = m_ram_cache.write_to_disk(disk_cache_path());
+    const auto diff = std::chrono::steady_clock::now() - start;
+    if (diff > std::chrono::milliseconds(50))
+        fmt::println(stderr, "Scheduler::persist_tiles took {} for {} quads.", std::chrono::duration_cast<std::chrono::milliseconds>(diff), m_ram_cache.n_cached_objects());
+
+    if (!r.has_value()) {
+        qDebug("Writing tiles to disk into %s failed: %s. Removing all files.", disk_cache_path().c_str(), r.error().c_str());
         std::filesystem::remove_all(disk_cache_path());
     }
 }
@@ -277,11 +280,11 @@ void Scheduler::update_stats()
 
 void Scheduler::read_disk_cache()
 {
-    try {
-        m_ram_cache.read_from_disk(disk_cache_path());
+    const auto r = m_ram_cache.read_from_disk(disk_cache_path());
+    if (r.has_value()) {
         update_stats();
-    } catch (const std::runtime_error& e) {
-        qDebug("Reading tiles from disk cache (%s) failed: \n%s\nRemoving all files.", disk_cache_path().c_str(), e.what());
+    } else {
+        qDebug("Reading tiles from disk cache (%s) failed: \n%s\nRemoving all files.", disk_cache_path().c_str(), r.error().c_str());
         std::filesystem::remove_all(disk_cache_path());
     }
 }

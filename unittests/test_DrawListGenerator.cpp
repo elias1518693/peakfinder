@@ -21,11 +21,11 @@
 
 #include <QFile>
 
-#include "nucleus/camera/stored_positions.h"
+#include "nucleus/camera/PositionStorage.h"
 #include "nucleus/tile_scheduler/DrawListGenerator.h"
 #include "nucleus/tile_scheduler/utils.h"
-#include "sherpa/TileHeights.h"
-#include "sherpa/quad_tree.h"
+#include "radix/TileHeights.h"
+#include "radix/quad_tree.h"
 
 TEST_CASE("nucleus/tile_scheduler/DrawListGenerator")
 {

@@ -23,12 +23,12 @@
 #include <QSignalSpy>
 #include <QThread>
 
-#include "nucleus/camera/stored_positions.h"
+#include "nucleus/camera/PositionStorage.h"
 #include "nucleus/tile_scheduler/Scheduler.h"
 #include "nucleus/tile_scheduler/tile_types.h"
 #include "nucleus/tile_scheduler/utils.h"
 #include "nucleus/utils/tile_conversion.h"
-#include "sherpa/TileHeights.h"
+#include "radix/TileHeights.h"
 #include "unittests/catch2_helpers.h"
 #include "unittests/test_helpers.h"
 
