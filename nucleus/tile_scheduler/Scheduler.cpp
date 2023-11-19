@@ -55,6 +55,12 @@ Scheduler::Scheduler(const QByteArray& default_ortho_tile, const QByteArray& def
     m_persist_timer->setSingleShot(true);
     connect(m_persist_timer.get(), &QTimer::timeout, this, &Scheduler::persist_tiles);
 
+    m_tile_timer = std::make_unique<QTimer>(this);
+      // Connect the timer's timeout signal to the function you want to call
+    connect(m_tile_timer.get(), &QTimer::timeout, this, &Scheduler::send_quad_requests);
+    // Set the timer to trigger every 10 ms
+    m_tile_timer->start(500);
+
     m_default_ortho_tile = std::make_shared<QByteArray>(default_ortho_tile);
     m_default_height_tile = std::make_shared<QByteArray>(default_height_tile);
 }
@@ -315,6 +321,16 @@ void Scheduler::set_persist_timeout(unsigned int new_persist_timeout)
 
     if (m_persist_timer->isActive()) {
         m_persist_timer->start(int(m_persist_timeout));
+    }
+}
+
+void Scheduler::set_tile_timer(unsigned int new_tile_time)
+{
+    assert(new_tile_time < std::numeric_limits<int>::max());
+    m_persist_timeout = new_tile_time;
+
+    if (m_tile_timer->isActive()) {
+        m_tile_timer->start(int(new_tile_time));
     }
 }
 

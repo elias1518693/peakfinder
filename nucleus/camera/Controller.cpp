@@ -72,13 +72,38 @@ void Controller::refine_altitude()
 {
     qDebug() << "refining altitude";
 
+    // Define the area around the initial point
+    const double radius = 0.000001; // example radius in degrees
+    const double stepSize = 0.00001; // define step size in degrees
+    const int steps = 0; // calculate number of steps
+
     const auto center = srs::world_to_lat_long({m_definition.position().x, m_definition.position().y});
-    qDebug()<<m_data_querier->get_altitude({center});
-    auto altitude = srs::lat_long_alt_to_world(glm::dvec3(center.x, center.y, m_data_querier->get_altitude({center}) + 20.0f));
+
+    double maxAltitude = m_data_querier->get_altitude({center}) + 5.0f;
+    qDebug()<<"Exact altitude:" << maxAltitude << "for lat long:" << center.x << center.y;
+    double maxlat = center.x;
+    double maxlon = center.y;
+    // Sample altitudes in the area
+    for (int i = -steps; i <= steps; ++i) {
+        for (int j = 0; j <= steps; ++j) {
+            double lat = center.x + i * stepSize;
+            double lon = center.y + j * stepSize;
+            double currentAltitude = m_data_querier->get_altitude({lat, lon});
+            if (currentAltitude > maxAltitude) {
+                maxAltitude = currentAltitude;
+                maxlat = lat;
+                maxlon = lon;
+            }
+        }
+    }
+    qDebug()<<"Max Altitude:" << maxAltitude;
+    // Find the maximum altitude
+    auto altitude = srs::lat_long_alt_to_world(glm::dvec3(maxlat, maxlon, maxAltitude));
 
     // Move to the new altitude (maximum altitude)
     move({ 0, 0, altitude.z - m_definition.position().z });
 }
+
 
 void Controller::set_latitude_longitude_altitude(double latitude, double longitude, double altitude)
 {

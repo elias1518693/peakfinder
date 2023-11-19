@@ -74,6 +74,8 @@ public:
     [[nodiscard]] unsigned int persist_timeout() const;
     void set_persist_timeout(unsigned int new_persist_timeout);
 
+    void set_tile_timer(unsigned int new_tile_time);
+
     void read_disk_cache();
 
     void set_retirement_age_for_tile_cache(unsigned int new_retirement_age_for_tile_cache);
@@ -117,6 +119,7 @@ private:
     std::unique_ptr<QTimer> m_update_timer;
     std::unique_ptr<QTimer> m_purge_timer;
     std::unique_ptr<QTimer> m_persist_timer;
+    std::unique_ptr<QTimer> m_tile_timer;
     camera::Definition m_current_camera;
     utils::AabbDecoratorPtr m_aabb_decorator;
     Cache<tile_types::TileQuad> m_ram_cache;

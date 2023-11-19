@@ -181,7 +181,6 @@ def readExif(file_path):
         if not exif_data.get('GPS GPSLatitude'):
             # Move file to noposition subdirectory
             f.close()
-            move(file_path, noposition_dir + "/" + file_name)
         else:
             # Get GPS data
             latitude = exif_data.get('GPS GPSLatitude')
@@ -217,14 +216,23 @@ def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, alt, fo
             i += rotate_degrees
             print("Running:", cmd)
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-            process.wait()        
+            process.wait()
+            stdout, stderr = process.communicate()
+
+            # Decode the output and error (as they are in bytes format)
+            output = stdout.decode()
+            error = stderr.decode()
+
+            # Print or process the output and error
+            print("Output:", output)
+            print("Error:", error)
 
     except Exception as e:
         print("Error:", str(e))
         return -1
         
         
-def render_result(renderer_path, image_path, angle, lat, long, alt, fov):
+def render_result(renderer_path, image_path, angle, lat, long, alt, fov, pitch):
     try:
         img = Image.open(image_path)
         width, height = img.size  
@@ -234,7 +242,7 @@ def render_result(renderer_path, image_path, angle, lat, long, alt, fov):
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
 
-        orientation = f" {angle} 45"
+        orientation = f" {angle} {45 + pitch}"
         new_file_name = f"{file_name}_result_d{file_extension}"
         cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
         print("Running:", cmd)
@@ -276,37 +284,22 @@ def calculate_camera_matrix(horizontal_fov, width, height):
                               [0, fy, cy],
                               [0, 0, 1]])
     return camera_matrix
-def rotation_matrix_to_pitch_yaw_roll(rotation_matrix):
-    """Convert a rotation matrix to pitch, yaw, and roll angles.
-
-    Args:
-    rotation_matrix (numpy.ndarray): 3x3 rotation matrix.
-
-    Returns:
-    tuple: (pitch, yaw, roll) angles in radians.
-    """
-    if rotation_matrix.shape != (3, 3):
-        raise ValueError("Rotation matrix must be 3x3.")
-
-    # Extracting the values from the rotation matrix
-    r11, r12, r13 = rotation_matrix[0, 0], rotation_matrix[0, 1], rotation_matrix[0, 2]
-    r21, r22, r23 = rotation_matrix[1, 0], rotation_matrix[1, 1], rotation_matrix[1, 2]
-    r31, r32, r33 = rotation_matrix[2, 0], rotation_matrix[2, 1], rotation_matrix[2, 2]
-
-    # Calculating yaw, pitch, and roll
-    if r31 != 1 and r31 != -1:
-        pitch = -math.asin(r31)
-        roll = math.atan2(r32 / math.cos(pitch), r33 / math.cos(pitch))
-        yaw = math.atan2(r21 / math.cos(pitch), r11 / math.cos(pitch))
+def rotation_matrix_to_pitch_yaw_roll(H):
+    sy = np.sqrt(H[0,0] * H[0,0] +  H[1,0] * H[1,0])
+    singular = sy < 1e-6
+    if not singular:
+        x = np.arctan2(H[2,1] , H[2,2])
+        y = np.arctan2(-H[2,0], sy)
+        z = np.arctan2(H[1,0], H[0,0])
     else:
-        yaw = 0
-        if r31 == -1:
-            pitch = math.pi / 2
-            roll = yaw + math.atan2(r12, r13)
-        else:
-            pitch = -math.pi / 2
-            roll = -yaw + math.atan2(-r12, -r13)
+        x = np.arctan2(-H[1,2], H[1,1])
+        y = np.arctan2(-H[2,0], sy)
+        z = 0
 
+    roll = np.degrees(x)
+    pitch = np.degrees(y)
+    yaw = np.degrees(z)
+    print(f"pitch:{pitch} roll:{roll} yaw:{yaw}")
     return pitch, yaw, roll
     
 def start_matching(image_path, rotate_degrees, fov):
@@ -320,7 +313,8 @@ def start_matching(image_path, rotate_degrees, fov):
     best_match_image_path = ""
     best_match_image_degree = 0.0
     best_match_prob = 0.0
-    best_match_angle = 0.0
+    best_match_yaw = 0.0
+    best_match_pitch = 0.0
     best_match_image_deg = 0
     best_match_h = None
     device = K.utils.get_cuda_device_if_available()
@@ -349,13 +343,14 @@ def start_matching(image_path, rotate_degrees, fov):
         cameraMatrix = calculate_camera_matrix(fov, width, height)
 
         H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
-        E, mask = cv2.findEssentialMat(mkpts0, mkpts1, cameraMatrix)
-        retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, cameraMatrix)
-        pitch,yaw,roll = rotation_matrix_to_pitch_yaw_roll(R)
-        print(math.degrees(pitch))
+        #E, mask = cv2.findEssentialMat(mkpts0, mkpts1, cameraMatrix)
+        #retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, cameraMatrix)
+        #rotation_matrix_to_pitch_yaw_roll(R)
+        
         num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, cameraMatrix)
-        pitch,yaw,roll = rotation_matrix_to_pitch_yaw_roll(Rs[0])
-        print(math.degrees(pitch))
+        for Ri in Rs:
+            rotation_matrix_to_pitch_yaw_roll(Ri)
+       
         inliers = inliers > 0
         if(inliers.size < 0):
             i += rotate_degrees
@@ -363,19 +358,14 @@ def start_matching(image_path, rotate_degrees, fov):
         if H is None or inliers is None:
             i += rotate_degrees
             continue
-        
-        # Normalize the homography matrix
-        #H = H / H[2, 2]
-        
-        # Calculate the rotation angle
-        theta = np.arctan2(H[1, 0], H[0, 0])
-        angle = np.degrees(theta)  # Convert radians to degrees
-        print(angle)
+        pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(H)
+
         match_prob = inliers.size
         # Update the best match
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
-            best_match_angle = angle
+            best_match_pitch = pitch
+            best_match_yaw = yaw
             best_match_image_deg = i
             best_match_prob = match_prob
             best_match_h = H
@@ -400,7 +390,7 @@ def start_matching(image_path, rotate_degrees, fov):
         i += rotate_degrees
     # Print the results
     print(f"Best Match Image Path: {best_match_image_path}")
-    print(f"Rotation Angle: {best_match_angle} degrees")
+    print(f"Rotation Angle: {best_match_yaw} degrees")
     if best_match_h is not None:
         # Load the best match image
         best_match_image = cv2.imread(best_match_image_path)
@@ -422,7 +412,7 @@ def start_matching(image_path, rotate_degrees, fov):
         # cv2.imshow("Overlay Image", overlay_image)  # If you want to display the image
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()  # Make sure to destroy all windows if you've used cv2.imshow
-    return best_match_angle + best_match_image_deg
+    return best_match_yaw + best_match_image_deg, best_match_pitch
 
 if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_5_0_MinGW_64_bit-Release/plain_renderer')
@@ -446,8 +436,8 @@ if __name__ == "__main__":
     # Start the renderer with the specified parameters and select an image
     start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
     
-    angle = start_matching(image_path, rotate_degrees, fov)
+    yaw, pitch = start_matching(image_path, rotate_degrees, fov)
     
-    render_result(renderer_path, image_path, angle, lat, long, height, fov)
+    render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch)
     
     
