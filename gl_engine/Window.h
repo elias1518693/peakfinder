@@ -83,7 +83,7 @@ public slots:
     void render_looped_changed(bool render_looped_flag);
     void reload_shader();
     void store_next_image() override;
-
+    void setFileName(QString fileName);
 signals:
     void report_measurements(QList<nucleus::timing::TimerReport> values);
 
@@ -110,8 +110,10 @@ private:
     bool m_initialised = false;
     bool m_render_looped = false;
     bool m_sort_tiles = true;
+    bool m_store_image = false;
     QString m_debug_text;
     QString m_debug_scheduler_stats;
+    QString m_file_name;
 
     std::unique_ptr<nucleus::timing::TimerManager> m_timer;
 

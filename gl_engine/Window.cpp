@@ -56,6 +56,7 @@
 #include "nucleus/timing/TimerManager.h"
 #include "nucleus/timing/TimerInterface.h"
 #include "nucleus/timing/CpuTimer.h"
+#include "qdir.h"
 #if (defined(__linux) && !defined(__ANDROID__)) || defined(_WIN32) || defined(_WIN64)
 #include "GpuAsyncQueryTimer.h"
 #endif
@@ -88,6 +89,9 @@ Window::~Window()
 
 void Window::initialise_gpu()
 {
+    QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
+    assert(f->hasOpenGLFeature(QOpenGLExtraFunctions::OpenGLFeature::MultipleRenderTargets));
+
     QOpenGLDebugLogger* logger = new QOpenGLDebugLogger(this);
     logger->initialize();
     connect(logger, &QOpenGLDebugLogger::messageLogged, [](const auto& message) {
@@ -102,8 +106,59 @@ void Window::initialise_gpu()
     m_tile_manager->init();
     m_tile_manager->initilise_attribute_locations(m_shader_manager->tile_shader());
     m_screen_quad_geometry = gl_engine::helpers::create_screen_quad_geometry();
-    m_framebuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
-    m_depth_buffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Int24, std::vector({ Framebuffer::ColourFormat::RGBA8 }));
+    // NOTE to position buffer: The position can not be recalculated by depth alone. (given the numerical resolution of the depth buffer and
+    // our massive view spektrum). ReverseZ would be an option but isnt possible on WebGL and OpenGL ES (since their depth buffer is aligned from -1...1)
+    // I implemented reverse Z at some point natively (just look for the comments "for ReverseZ" in the whole solution). Even with reverse Z the
+    // reconstruction of the position inside the illumination shaders is not perfect though. Thats why we have this 4x32bit position buffer.
+    // Also don't try to reconstruct the position from the discretized Encoded Depth buffer. Thats wrong for a lot of reasons and it should purely be
+    // used for screen interaction on close surfaces.
+    // NEXT NOTE in regards to distance: I save the distance inside the position buffer to not have to calculate it all of the time
+    // by the position. IMPORTANT: I also reset it to -1 such that i know when a pixel was not processed in tile shader!!
+    // ANOTHER IMPORTANT NOTE: RGB32f, RGB16f are not supported by OpenGL ES and/or WebGL
+    m_gbuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Float32,
+        std::vector{
+            TextureDefinition{ Framebuffer::ColourFormat::RGB8    },      // Albedo
+            TextureDefinition{ Framebuffer::ColourFormat::RGBA32F },      // Position WCS and distance (distance is optional, but i use it directly for a little speed improvement)
+            TextureDefinition{ Framebuffer::ColourFormat::RG16UI  },      // Octahedron Normals
+            TextureDefinition{ Framebuffer::ColourFormat::R32UI   }       // Discretized Encoded Depth for readback IMPORTANT: IF YOU MOVE THIS YOU HAVE TO ADAPT THE GET DEPTH FUNCTION
+        });
+
+    m_atmospherebuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::None, std::vector{ TextureDefinition{Framebuffer::ColourFormat::RGBA8} });
+
+    m_shared_config_ubo = std::make_shared<gl_engine::UniformBuffer<gl_engine::uboSharedConfig>>(0, "shared_config");
+    m_shared_config_ubo->init();
+    m_shared_config_ubo->bind_to_shader(m_shader_manager->all());
+
+    m_camera_config_ubo = std::make_shared<gl_engine::UniformBuffer<gl_engine::uboCameraConfig>>(1, "camera_config");
+    m_camera_config_ubo->init();
+    m_camera_config_ubo->bind_to_shader(m_shader_manager->all());
+
+    m_shadow_config_ubo = std::make_shared<gl_engine::UniformBuffer<gl_engine::uboShadowConfig>>(2, "shadow_config");
+    m_shadow_config_ubo->init();
+    m_shadow_config_ubo->bind_to_shader(m_shader_manager->all());
+
+    m_ssao = std::make_unique<gl_engine::SSAO>(m_shader_manager->shared_ssao_program(), m_shader_manager->shared_ssao_blur_program());
+
+    m_shadowmapping = std::make_unique<gl_engine::ShadowMapping>(m_shader_manager->shared_shadowmap_program(), m_shadow_config_ubo, m_shared_config_ubo);
+
+    {   // INITIALIZE CPU AND GPU TIMER
+        using namespace std;
+        using nucleus::timing::CpuTimer;
+        m_timer = std::make_unique<nucleus::timing::TimerManager>();
+
+// GPU Timing Queries not supported on OpenGL ES or Web GL
+#if (defined(__linux) && !defined(__ANDROID__)) || defined(_WIN32) || defined(_WIN64)
+        m_timer->add_timer(make_shared<GpuAsyncQueryTimer>("ssao", "GPU", 240, 1.0f/60.0f));
+        m_timer->add_timer(make_shared<GpuAsyncQueryTimer>("atmosphere", "GPU", 240, 1.0f/60.0f));
+        m_timer->add_timer(make_shared<GpuAsyncQueryTimer>("tiles", "GPU", 240, 1.0f/60.0f));
+        m_timer->add_timer(make_shared<GpuAsyncQueryTimer>("shadowmap", "GPU", 240, 1.0f/60.0f));
+        m_timer->add_timer(make_shared<GpuAsyncQueryTimer>("compose", "GPU", 240, 1.0f/60.0f));
+        m_timer->add_timer(make_shared<GpuAsyncQueryTimer>("gpu_total", "TOTAL", 240, 1.0f/60.0f));
+#endif
+        m_timer->add_timer(make_shared<CpuTimer>("cpu_total", "TOTAL", 240, 1.0f/60.0f));
+        m_timer->add_timer(make_shared<CpuTimer>("cpu_b2b", "TOTAL", 240, 1.0f/60.0f));
+    }
+
     emit gpu_ready_changed(true);
 }
 
@@ -257,7 +312,15 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     if (m_render_looped) {
         m_timer->stop_timer("cpu_b2b");
     }
+    if(m_store_image){
+        if(!QDir("rendered_images").exists()){
+            QDir().mkdir("rendered_images");
+        }
+        framebuffer->toImage().save("rendered_images/" + m_file_name);
+        m_store_image = false;
 
+        QCoreApplication::quit();
+    }
     QList<nucleus::timing::TimerReport> new_values = m_timer->fetch_results();
     if (new_values.size() > 0) {
         emit report_measurements(new_values);
