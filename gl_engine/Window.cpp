@@ -284,8 +284,10 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
         m_timer->stop_timer("ssao");
     }
 
-    if (framebuffer)
+    if (framebuffer){
+        qDebug()<<"framebuffer exists";
         framebuffer->bind();
+    }
 
     p = m_shader_manager->compose_program();
 
@@ -312,13 +314,14 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     if (m_render_looped) {
         m_timer->stop_timer("cpu_b2b");
     }
+
     if(m_store_image){
         if(!QDir("rendered_images").exists()){
             QDir().mkdir("rendered_images");
         }
-        framebuffer->toImage().save("rendered_images/" + m_file_name);
+        qDebug()<<"saving image";
+        m_gbuffer->read_colour_attachment(0).save("rendered_images/" + m_file_name);
         m_store_image = false;
-
         QCoreApplication::quit();
     }
     QList<nucleus::timing::TimerReport> new_values = m_timer->fetch_results();

@@ -210,7 +210,7 @@ def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, alt, fo
         processes = []  # List to store subprocess objects
 
         while i <= 360:
-            orientation = f" {i} 45" 
+            orientation = f" {i} 0 0" 
             new_file_name = f"{file_name}_{i}_d{file_extension}"
             cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
             i += rotate_degrees
@@ -232,7 +232,7 @@ def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, alt, fo
         return -1
         
         
-def render_result(renderer_path, image_path, angle, lat, long, alt, fov, pitch):
+def render_result(renderer_path, image_path, angle, lat, long, alt, fov, pitch, roll):
     try:
         img = Image.open(image_path)
         width, height = img.size  
@@ -242,7 +242,7 @@ def render_result(renderer_path, image_path, angle, lat, long, alt, fov, pitch):
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
 
-        orientation = f" {angle} {45 + pitch}"
+        orientation = f" {angle} {pitch} {roll}"
         new_file_name = f"{file_name}_result_d{file_extension}"
         cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
         print("Running:", cmd)
@@ -315,6 +315,7 @@ def start_matching(image_path, rotate_degrees, fov):
     best_match_prob = 0.0
     best_match_yaw = 0.0
     best_match_pitch = 0.0
+    best_roll = 0.0
     best_match_image_deg = 0
     best_match_h = None
     device = K.utils.get_cuda_device_if_available()
@@ -340,8 +341,20 @@ def start_matching(image_path, rotate_degrees, fov):
         if mkpts0.size < 10 or mkpts1.size < 10:
             i += rotate_degrees
             continue
+        sift = cv2.SIFT_create()
+        image_numpy = cv2.imread(new_image_path, cv2.IMREAD_GRAYSCALE)
+        des,keyp = sift.compute(image_numpy, mkpts0)
+        print(des)
         cameraMatrix = calculate_camera_matrix(fov, width, height)
-
+        
+       
+        F,test = cv2.findFundamentalMat(mkpts0, mkpts1)
+        if F is None:
+            i+=rotate_degrees
+            continue
+        mkpts0, mkpts1 = cv2.correctMatches(F, np.expand_dims(mkpts0, 0), np.expand_dims(mkpts1, 0))
+        mkpts0 = mkpts0.reshape(-1, 2)
+        mkpts1 = mkpts1.reshape(-1, 2)
         H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
         #E, mask = cv2.findEssentialMat(mkpts0, mkpts1, cameraMatrix)
         #retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, cameraMatrix)
@@ -359,12 +372,15 @@ def start_matching(image_path, rotate_degrees, fov):
             i += rotate_degrees
             continue
         pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(H)
-
+        print(KF.laf_from_center_scale_ori(torch.from_numpy(mkpts0).view(1,-1, 2),
+                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1, 1),
+                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1)))
         match_prob = inliers.size
         # Update the best match
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
             best_match_pitch = pitch
+            best_roll = roll
             best_match_yaw = yaw
             best_match_image_deg = i
             best_match_prob = match_prob
@@ -412,7 +428,7 @@ def start_matching(image_path, rotate_degrees, fov):
         # cv2.imshow("Overlay Image", overlay_image)  # If you want to display the image
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()  # Make sure to destroy all windows if you've used cv2.imshow
-    return best_match_yaw + best_match_image_deg, best_match_pitch
+    return best_match_yaw + best_match_image_deg, best_match_pitch, best_roll
 
 if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_5_0_MinGW_64_bit-Release/plain_renderer')
@@ -434,10 +450,10 @@ if __name__ == "__main__":
         lat, long, height, fov = readExif(image_path)   
     rotate_degrees = round(fov-5)
     # Start the renderer with the specified parameters and select an image
-    start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
+    #start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
     
-    yaw, pitch = start_matching(image_path, rotate_degrees, fov)
+    yaw, pitch, roll = start_matching(image_path, rotate_degrees, fov)
     
-    render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch)
+    render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
     
     

@@ -61,6 +61,7 @@ public slots:
     void set_field_of_view(float fov_degrees);
     void move(const glm::dvec3& v);
     void orbit(const glm::dvec3& centre, const glm::dvec2& degrees);
+    void roll(const double& degree);
     void set_view_direction(const glm::dvec2& degrees);
     void update() const;
 

@@ -84,7 +84,7 @@ void Controller::refine_altitude()
 
     const auto center = srs::world_to_lat_long({m_definition.position().x, m_definition.position().y});
 
-    double maxAltitude = m_data_querier->get_altitude({center}) + 5.0f;
+    double maxAltitude = m_data_querier->get_altitude({center}) + 2;
     qDebug()<<"Exact altitude:" << maxAltitude << "for lat long:" << center.x << center.y;
     double maxlat = center.x;
     double maxlon = center.y;
@@ -151,6 +151,15 @@ void Controller::orbit(const glm::dvec3& centre, const glm::dvec2& degrees)
     m_definition.orbit(centre, degrees);
     update();
 }
+
+void Controller::roll(const double& degree)
+{
+    if (degree == 0)
+        return;
+    m_definition.roll(m_definition.position(), degree);
+    update();
+}
+
 void Controller::set_view_direction(const glm::dvec2& degrees){
     if (degrees == glm::dvec2 { 0, 0 })
         return;

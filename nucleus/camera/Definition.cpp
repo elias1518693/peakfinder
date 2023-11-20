@@ -255,6 +255,14 @@ void Definition::orbit(const glm::dvec3& centre, const glm::dvec2& degrees)
     move(centre);
 }
 
+void Definition::roll(const glm::dvec3& centre, const double degree)
+{
+    move(-centre);
+    const auto rotation_y_axis = glm::rotate(glm::radians(degree), z_axis());
+    m_camera_transformation = rotation_y_axis * m_camera_transformation;
+    move(centre);
+}
+
 void Definition::orbit_clamped(const glm::dvec3& centre, const glm::dvec2& degrees)
 {
     auto degFromUp = glm::degrees(glm::acos(glm::dot(z_axis(), glm::dvec3(0, 0, 1))));

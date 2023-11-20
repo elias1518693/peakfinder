@@ -60,6 +60,7 @@ public:
     void pan(const glm::dvec2& v);
     void move(const glm::dvec3& v);
     void orbit(const glm::dvec3& centre, const glm::dvec2& degrees);
+    void roll(const glm::dvec3& centre, const double degree);
     void orbit_clamped(const glm::dvec3& centre, const glm::dvec2& degrees);
     void zoom(double v);
     void look_at(const glm::dvec3& camera_position, const glm::dvec3& view_at_point);
