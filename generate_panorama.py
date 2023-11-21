@@ -15,6 +15,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import requests
 import json
+from database import *
 
 def load_torch_image(fname, target_size):
     # Load the image using OpenCV
@@ -99,6 +100,7 @@ def scale_to_fit_screen(image_width, image_height, screen_width, screen_height):
     scaled_height = min(screen_height, int(scaled_height))
     
     return scaled_width, scaled_height
+   
 
 
 # Create a function to convert from Degrees Minutes Seconds to decimal degrees
@@ -303,12 +305,34 @@ def rotation_matrix_to_pitch_yaw_roll(H):
     return pitch, yaw, roll
     
 def start_matching(image_path, rotate_degrees, fov):
+    # Open the database.
+    db = COLMAPDatabase.connect("testdatabase.db")
+
+    # For convenience, try creating all the tables upfront.
+
+    db.create_tables()
+
+    # Create dummy cameras.
+
+
+
+
     img = Image.open(image_path)
     width, height = img.size
+    screenwidth, screenheight = scale_to_fit_screen(width, height, 1920, 1080) 
     i = 0
-    target_size = (512, 512)
+    target_size = (int(screenwidth/2), int(screenheight/2))
     original_path = image_path
     file_name, file_extension = os.path.splitext(os.path.basename(image_path))
+    model1, width1, height1, params1 = (
+        0,
+        width,
+        height,
+        np.array((1024.0, 512.0, 384.0)),
+    )
+    camera_id1 = db.add_camera(model1, width1, height1, params1)
+    image_id_original = db.add_image(f"{file_name}{file_extension}", camera_id1)
+    
     original_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)  # Load the original image in grayscale
     best_match_image_path = ""
     best_match_image_degree = 0.0
@@ -319,12 +343,14 @@ def start_matching(image_path, rotate_degrees, fov):
     best_match_image_deg = 0
     best_match_h = None
     device = K.utils.get_cuda_device_if_available()
+    allkeypoints = np.empty((0,2))
+    print(allkeypoints.shape)
     if not os.path.exists('./matches'):
         os.makedirs('matches')
     while i <= 360:
         new_image_path = f"rendered_images/{file_name}_{i}_d{file_extension}"
         matched_image_path = f"matches/{file_name}_{i}_d_matched{file_extension}"
-
+        image_id = db.add_image(f"{file_name}_{i}_d{file_extension}", camera_id1)
 
         img1 = load_torch_image(image_path, target_size)
         img2 = load_torch_image(new_image_path, target_size)
@@ -336,34 +362,29 @@ def start_matching(image_path, rotate_degrees, fov):
 
         with torch.no_grad():
             correspondences = matcher(input_dict)
-        mkpts0 = correspondences['keypoints0'].numpy()
-        mkpts1 = correspondences['keypoints1'].numpy()
+        mkpts0 = correspondences['keypoints0'].numpy() * 2
+        mkpts1 = correspondences['keypoints1'].numpy() * 2
+        mkpts0[:, 0] *= height/screenheight
+        mkpts0[:, 1] *= width/screenwidth
         if mkpts0.size < 10 or mkpts1.size < 10:
             i += rotate_degrees
             continue
-        sift = cv2.SIFT_create()
-        image_numpy = cv2.imread(new_image_path, cv2.IMREAD_GRAYSCALE)
-        des,keyp = sift.compute(image_numpy, mkpts0)
-        print(des)
-        cameraMatrix = calculate_camera_matrix(fov, width, height)
-        
+        db.add_keypoints(image_id, mkpts1)
        
-        F,test = cv2.findFundamentalMat(mkpts0, mkpts1)
-        if F is None:
+        H, inliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+        if H is None:
             i+=rotate_degrees
             continue
-        mkpts0, mkpts1 = cv2.correctMatches(F, np.expand_dims(mkpts0, 0), np.expand_dims(mkpts1, 0))
-        mkpts0 = mkpts0.reshape(-1, 2)
-        mkpts1 = mkpts1.reshape(-1, 2)
-        H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+        
+        matches = np.where(inliers.ravel() == 1)[0]
+        print( mkpts0.size)
+        matches =np.array([matches + allkeypoints.size/2,matches]).T
+        print(allkeypoints.size/2)
+        allkeypoints = np.vstack((allkeypoints, mkpts0))
         #E, mask = cv2.findEssentialMat(mkpts0, mkpts1, cameraMatrix)
         #retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, cameraMatrix)
         #rotation_matrix_to_pitch_yaw_roll(R)
-        
-        num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, cameraMatrix)
-        for Ri in Rs:
-            rotation_matrix_to_pitch_yaw_roll(Ri)
-       
+        db.add_matches(image_id_original, image_id, matches)
         inliers = inliers > 0
         if(inliers.size < 0):
             i += rotate_degrees
@@ -371,40 +392,12 @@ def start_matching(image_path, rotate_degrees, fov):
         if H is None or inliers is None:
             i += rotate_degrees
             continue
-        pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(H)
-        print(KF.laf_from_center_scale_ori(torch.from_numpy(mkpts0).view(1,-1, 2),
-                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1, 1),
-                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1)))
-        match_prob = inliers.size
-        # Update the best match
-        if match_prob > best_match_prob or best_match_image_path == "":
-            best_match_image_path = new_image_path
-            best_match_pitch = pitch
-            best_roll = roll
-            best_match_yaw = yaw
-            best_match_image_deg = i
-            best_match_prob = match_prob
-            best_match_h = H
-        fig = plt.figure()
-        ax = fig.add_subplot(1, 1, 1)
-        draw_LAF_matches(
-        KF.laf_from_center_scale_ori(torch.from_numpy(mkpts0).view(1,-1, 2),
-                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1, 1),
-                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1)),
-        KF.laf_from_center_scale_ori(torch.from_numpy(mkpts1).view(1,-1, 2),
-                                    torch.ones(mkpts1.shape[0]).view(1,-1, 1, 1),
-                                    torch.ones(mkpts1.shape[0]).view(1,-1, 1)),
-        torch.arange(mkpts0.shape[0]).view(-1,1).repeat(1,2),
-        K.tensor_to_image(img1),
-        K.tensor_to_image(img2),
-        inliers,
-        draw_dict={'inlier_color': (0.2, 1, 0.2),
-                   'tentative_color': None, 
-                   'feature_color': (0.2, 0.5, 1), 'vertical': False},
-                   ax=ax,)
-        plt.savefig(matched_image_path)
+        
         i += rotate_degrees
     # Print the results
+    db.add_keypoints(image_id_original, allkeypoints)
+    db.commit()
+    db.close()
     print(f"Best Match Image Path: {best_match_image_path}")
     print(f"Rotation Angle: {best_match_yaw} degrees")
     if best_match_h is not None:
@@ -435,7 +428,8 @@ if __name__ == "__main__":
     # Path to plain_renderer.exe
     renderer_path = "plain_renderer.exe "
     image_path = select_image()
-    
+    if os.path.exists("testdatabase.db"):
+        os.remove("testdatabase.db")
     if not image_path:
         print("No image selected. Exiting.")
         exit()
@@ -450,10 +444,10 @@ if __name__ == "__main__":
         lat, long, height, fov = readExif(image_path)   
     rotate_degrees = round(fov-5)
     # Start the renderer with the specified parameters and select an image
-    #start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
+    start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
     
     yaw, pitch, roll = start_matching(image_path, rotate_degrees, fov)
     
-    render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
+    #render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
     
     
