@@ -84,7 +84,7 @@ void Controller::refine_altitude()
 
     const auto center = srs::world_to_lat_long({m_definition.position().x, m_definition.position().y});
 
-    double maxAltitude = m_data_querier->get_altitude({center}) + 2;
+    double maxAltitude = m_data_querier->get_altitude({center});
     qDebug()<<"Exact altitude:" << maxAltitude << "for lat long:" << center.x << center.y;
     double maxlat = center.x;
     double maxlon = center.y;

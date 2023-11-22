@@ -210,7 +210,7 @@ def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, alt, fo
         processes = []  # List to store subprocess objects
 
         while i <= 360:
-            orientation = f" {i} 0 0" 
+            orientation = f" 0 {i} 0" 
             new_file_name = f"{file_name}_{i}_d{file_extension}"
             cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
             i += rotate_degrees
@@ -232,7 +232,7 @@ def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, alt, fo
         return -1
         
         
-def render_result(renderer_path, image_path, angle, lat, long, alt, fov, pitch, roll):
+def render_result(renderer_path, image_path, yaw, lat, long, alt, fov, pitch, roll):
     try:
         img = Image.open(image_path)
         width, height = img.size  
@@ -242,31 +242,31 @@ def render_result(renderer_path, image_path, angle, lat, long, alt, fov, pitch, 
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
 
-        orientation = f" {angle} {pitch} {roll}"
+        orientation = f" {pitch} {yaw} {roll}"
         new_file_name = f"{file_name}_result_d{file_extension}"
         cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        process.wait()        
+        process.wait()
+        original_image_color = cv2.imread(image_path)
+        renderresult = cv2.resize(cv2.imread(f"rendered_images/{file_name}_result_d{file_extension}"), img.size)
+        
+         # Overlay the warped image onto the original image
+        # You can adjust the alpha value to make the overlay transparent
+        alpha = 0.6
+        overlay_image = cv2.addWeighted(original_image_color, 1 - alpha, renderresult, alpha, 0)
+        overlay_image_path = f"renderresult_overlay_{file_name}.png"
+        cv2.imwrite(overlay_image_path, overlay_image)  # Saving the overlay image
     except Exception as e:
         print("Error:", str(e))
         return -1
+    
 
 import numpy as np
 import math
 
 
 def calculate_camera_matrix(horizontal_fov, width, height):
-    """Calculate the camera matrix.
-
-    Args:
-    horizontal_fov (float): Horizontal field of view in degrees.
-    width (int): Width of the image sensor or image in pixels.
-    height (int): Height of the image sensor or image in pixels.
-
-    Returns:
-    numpy.ndarray: Camera matrix.
-    """
     # Convert horizontal FOV to radians
     horizontal_fov_rad = math.radians(horizontal_fov)
 
@@ -306,7 +306,8 @@ def start_matching(image_path, rotate_degrees, fov):
     img = Image.open(image_path)
     width, height = img.size
     i = 0
-    target_size = (512, 512)
+    screenwidth, screenheight = scale_to_fit_screen(width, height, 1920, 1080) 
+    target_size = (int(screenwidth/2), int(screenheight/2))
     original_path = image_path
     file_name, file_extension = os.path.splitext(os.path.basename(image_path))
     original_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)  # Load the original image in grayscale
@@ -322,6 +323,7 @@ def start_matching(image_path, rotate_degrees, fov):
     if not os.path.exists('./matches'):
         os.makedirs('matches')
     while i <= 360:
+        print(f"\n analysising image with orientation{i}")
         new_image_path = f"rendered_images/{file_name}_{i}_d{file_extension}"
         matched_image_path = f"matches/{file_name}_{i}_d_matched{file_extension}"
 
@@ -338,31 +340,32 @@ def start_matching(image_path, rotate_degrees, fov):
             correspondences = matcher(input_dict)
         mkpts0 = correspondences['keypoints0'].numpy()
         mkpts1 = correspondences['keypoints1'].numpy()
+        mkpts0adjsuted = np.array(mkpts0)
+        mkpts0adjsuted[:, 0] = mkpts0[:, 0] * height/screenheight * 2
+        mkpts0adjsuted[:, 1] = mkpts0[:, 1] * width/screenwidth * 2
+        mkpts1adjusted = mkpts1 * 2
         if mkpts0.size < 10 or mkpts1.size < 10:
             i += rotate_degrees
             continue
-        sift = cv2.SIFT_create()
-        image_numpy = cv2.imread(new_image_path, cv2.IMREAD_GRAYSCALE)
-        des,keyp = sift.compute(image_numpy, mkpts0)
-        print(des)
         cameraMatrix = calculate_camera_matrix(fov, width, height)
         
        
-        F,test = cv2.findFundamentalMat(mkpts0, mkpts1)
-        if F is None:
-            i+=rotate_degrees
-            continue
-        mkpts0, mkpts1 = cv2.correctMatches(F, np.expand_dims(mkpts0, 0), np.expand_dims(mkpts1, 0))
-        mkpts0 = mkpts0.reshape(-1, 2)
-        mkpts1 = mkpts1.reshape(-1, 2)
-        H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+        #F,test = cv2.findFundamentalMat(mkpts0adjsuted, mkpts1)
+        #if F is None:
+        #    i+=rotate_degrees
+        #    continue
+        #mkpts0, mkpts1 = cv2.correctMatches(F, np.expand_dims(mkpts0adjsuted, 0), np.expand_dims(mkpts1, 0))
+        #mkpts0 = mkpts0.reshape(-1, 2)
+        #mkpts1 = mkpts1.reshape(-1, 2)
+        H_warped, inliers_warped = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+        H, inliers = cv2.findHomography(mkpts0adjsuted, mkpts1adjusted, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
         #E, mask = cv2.findEssentialMat(mkpts0, mkpts1, cameraMatrix)
         #retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, cameraMatrix)
-        #rotation_matrix_to_pitch_yaw_roll(R)
+        #pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(R)
         
         num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, cameraMatrix)
-        for Ri in Rs:
-            rotation_matrix_to_pitch_yaw_roll(Ri)
+        #for Ri in Rs:
+            #pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(Ri)
        
         inliers = inliers > 0
         if(inliers.size < 0):
@@ -371,10 +374,7 @@ def start_matching(image_path, rotate_degrees, fov):
         if H is None or inliers is None:
             i += rotate_degrees
             continue
-        pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(H)
-        print(KF.laf_from_center_scale_ori(torch.from_numpy(mkpts0).view(1,-1, 2),
-                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1, 1),
-                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1)))
+        pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(H_warped)
         match_prob = inliers.size
         # Update the best match
         if match_prob > best_match_prob or best_match_image_path == "":
@@ -385,6 +385,7 @@ def start_matching(image_path, rotate_degrees, fov):
             best_match_image_deg = i
             best_match_prob = match_prob
             best_match_h = H
+            
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
         draw_LAF_matches(
@@ -397,7 +398,7 @@ def start_matching(image_path, rotate_degrees, fov):
         torch.arange(mkpts0.shape[0]).view(-1,1).repeat(1,2),
         K.tensor_to_image(img1),
         K.tensor_to_image(img2),
-        inliers,
+        inliers_warped,
         draw_dict={'inlier_color': (0.2, 1, 0.2),
                    'tentative_color': None, 
                    'feature_color': (0.2, 0.5, 1), 'vertical': False},
@@ -410,24 +411,25 @@ def start_matching(image_path, rotate_degrees, fov):
     if best_match_h is not None:
         # Load the best match image
         best_match_image = cv2.imread(best_match_image_path)
+       
         # Load the original image
         original_image_color = cv2.imread(original_path)
         # Assuming the original image is not grayscale because we're going to overlay it
         h, w = original_image_color.shape[:2]
+        #best_match_image = cv2.resize(best_match_image, (w, h))
         # Apply the warpPerspective function with the correct parameters
-        warped_image = cv2.warpPerspective(best_match_image, best_match_h, (w, h))
+        warped_image = cv2.warpPerspective(best_match_image, np.linalg.inv(best_match_h), (w, h))
 
         # Overlay the warped image onto the original image
         # You can adjust the alpha value to make the overlay transparent
-        alpha = 0.5
-        overlay_image = cv2.addWeighted(original_image_color, 1 - alpha, warped_image, alpha, 0)
-
-        # Save or show the overlay image
-        overlay_image_path = f"overlay_{file_name}.png"
-        cv2.imwrite(overlay_image_path, overlay_image)  # Saving the overlay image
-        # cv2.imshow("Overlay Image", overlay_image)  # If you want to display the image
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()  # Make sure to destroy all windows if you've used cv2.imshow
+        alpha = 0.6
+        overlay_weighted_image = cv2.addWeighted(original_image_color, 1 - alpha, warped_image, alpha, 0)
+        non_black_pixels = np.any(warped_image != [0, 0, 0], axis=-1)
+        original_image_color[non_black_pixels] = warped_image[non_black_pixels]
+        # Save or show the overlay image 
+        cv2.imwrite(f"overlay_weighted_{file_name}.png", overlay_weighted_image)  # Saving the overlay image
+        cv2.imwrite(f"overlay_{file_name}.png", original_image_color)
+        
     return best_match_yaw + best_match_image_deg, best_match_pitch, best_roll
 
 if __name__ == "__main__":
@@ -450,10 +452,9 @@ if __name__ == "__main__":
         lat, long, height, fov = readExif(image_path)   
     rotate_degrees = round(fov-5)
     # Start the renderer with the specified parameters and select an image
-    #start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
+    start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
     
     yaw, pitch, roll = start_matching(image_path, rotate_degrees, fov)
-    
     render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
     
     

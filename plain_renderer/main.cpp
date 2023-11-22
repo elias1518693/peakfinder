@@ -135,7 +135,7 @@ int main(int argc, char* argv[])
         qDebug()<<verticalFOV;
         controller.camera_controller()->set_field_of_view(verticalFOV);
 
-        controller.camera_controller()->set_view_direction(glm::dvec2(pitch, yaw));
+        controller.camera_controller()->set_view_direction(glm::dvec2(yaw, pitch));
         controller.camera_controller()->roll(roll);
 
 
