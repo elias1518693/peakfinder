@@ -111,6 +111,7 @@ private:
     bool m_render_looped = false;
     bool m_sort_tiles = true;
     bool m_store_image = false;
+    bool m_wireframe_enabled = false;
     QString m_debug_text;
     QString m_debug_scheduler_stats;
     QString m_file_name;

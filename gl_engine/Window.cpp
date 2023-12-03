@@ -56,7 +56,7 @@
 #include "nucleus/timing/TimerManager.h"
 #include "nucleus/timing/TimerInterface.h"
 #include "nucleus/timing/CpuTimer.h"
-#include "qdir.h"
+#include "nucleus/utils/bit_coding.h"
 #if (defined(__linux) && !defined(__ANDROID__)) || defined(_WIN32) || defined(_WIN64)
 #include "GpuAsyncQueryTimer.h"
 #endif
@@ -116,12 +116,12 @@ void Window::initialise_gpu()
     // by the position. IMPORTANT: I also reset it to -1 such that i know when a pixel was not processed in tile shader!!
     // ANOTHER IMPORTANT NOTE: RGB32f, RGB16f are not supported by OpenGL ES and/or WebGL
     m_gbuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::Float32,
-        std::vector{
-            TextureDefinition{ Framebuffer::ColourFormat::RGB8    },      // Albedo
-            TextureDefinition{ Framebuffer::ColourFormat::RGBA32F },      // Position WCS and distance (distance is optional, but i use it directly for a little speed improvement)
-            TextureDefinition{ Framebuffer::ColourFormat::RG16UI  },      // Octahedron Normals
-            TextureDefinition{ Framebuffer::ColourFormat::R32UI   }       // Discretized Encoded Depth for readback IMPORTANT: IF YOU MOVE THIS YOU HAVE TO ADAPT THE GET DEPTH FUNCTION
-        });
+                                              std::vector{
+                                                  TextureDefinition{ Framebuffer::ColourFormat::RGB8    },      // Albedo
+                                                  TextureDefinition{ Framebuffer::ColourFormat::RGBA32F },      // Position WCS and distance (distance is optional, but i use it directly for a little speed improvement)
+                                                  TextureDefinition{ Framebuffer::ColourFormat::RG16UI  },      // Octahedron Normals
+                                                  TextureDefinition{ Framebuffer::ColourFormat::RGBA8   }       // Discretized Encoded Depth for readback IMPORTANT: IF YOU MOVE THIS YOU HAVE TO ADAPT THE GET DEPTH FUNCTION
+                                              });
 
     m_atmospherebuffer = std::make_unique<Framebuffer>(Framebuffer::DepthFormat::None, std::vector{ TextureDefinition{Framebuffer::ColourFormat::RGBA8} });
 
@@ -259,17 +259,17 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
     f->glDepthFunc(GL_LESS);
 
 #if (defined(__linux) && !defined(__ANDROID__)) || defined(_WIN32) || defined(_WIN64)
-    if (funcs && m_shared_config_ubo->data.m_wireframe_mode > 0) funcs->glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    if (funcs && m_wireframe_enabled) funcs->glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 #endif
 
     m_shader_manager->tile_shader()->bind();
     m_timer->start_timer("tiles");
-    m_tile_manager->draw(m_shader_manager->tile_shader(), m_camera, draw_tiles, m_sort_tiles, m_camera.position());
+    m_tile_manager->draw(m_shader_manager->tile_shader(), m_camera, draw_tiles, true, m_camera.position());
     m_timer->stop_timer("tiles");
     m_shader_manager->tile_shader()->release();
 
 #if (defined(__linux) && !defined(__ANDROID__)) || defined(_WIN32) || defined(_WIN64)
-    if (funcs && m_shared_config_ubo->data.m_wireframe_mode > 0) funcs->glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    if (funcs && m_wireframe_enabled) funcs->glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 #endif
 
     m_gbuffer->unbind();
@@ -284,10 +284,8 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
         m_timer->stop_timer("ssao");
     }
 
-    if (framebuffer){
-        qDebug()<<"framebuffer exists";
+    if (framebuffer)
         framebuffer->bind();
-    }
 
     p = m_shader_manager->compose_program();
 
@@ -402,14 +400,8 @@ void Window::keyPressEvent(QKeyEvent* e)
         emit update_requested();
     }
     if (e->key() == Qt::Key::Key_F7) {
-        if (this->m_sort_tiles) {
-            this->m_sort_tiles = false;
-            qDebug("Tile-Sorting deactivated");
-        } else {
-            this->m_sort_tiles = true;
-            qDebug("Tile-Sorting active");
-        }
-        emit update_requested();
+        m_wireframe_enabled = !m_wireframe_enabled;
+        qDebug(m_render_looped ? "Wireframe enabled" : "Wireframe disabled");
     }
     if (e->key() == Qt::Key::Key_F11
         || (e->key() == Qt::Key_P && e->modifiers() == Qt::ControlModifier)
@@ -467,9 +459,8 @@ void Window::setFileName(QString fileName){
 
 float Window::depth(const glm::dvec2& normalised_device_coordinates)
 {
-    uint32_t fakeNormalizedDepth;
-    m_gbuffer->read_colour_attachment_pixel(3, normalised_device_coordinates, &fakeNormalizedDepth);
-    const auto depth = float(std::exp(double(fakeNormalizedDepth) / 4294967295.0 * 13.0));
+    const auto read_float = nucleus::utils::bit_coding::to_f16f16(m_gbuffer->read_colour_attachment_pixel(3, normalised_device_coordinates))[0];
+    const auto depth = std::exp(read_float * 13.f);
     return depth;
 }
 
