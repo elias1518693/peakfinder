@@ -56,9 +56,7 @@ Scheduler::Scheduler(const QByteArray& default_ortho_tile, const QByteArray& def
     connect(m_persist_timer.get(), &QTimer::timeout, this, &Scheduler::persist_tiles);
 
     m_tile_timer = std::make_unique<QTimer>(this);
-      // Connect the timer's timeout signal to the function you want to call
     connect(m_tile_timer.get(), &QTimer::timeout, this, &Scheduler::send_quad_requests);
-    // Set the timer to trigger every 10 ms
     m_tile_timer->start(500);
 
     m_default_ortho_tile = std::make_shared<QByteArray>(default_ortho_tile);
@@ -216,6 +214,7 @@ void Scheduler::send_quad_requests()
     });
     if(currently_active_tiles.size() == 0){
         qDebug()<<"alls quads loaded";
+
         emit all_quads_loaded();
     }
     emit quads_requested(currently_active_tiles);

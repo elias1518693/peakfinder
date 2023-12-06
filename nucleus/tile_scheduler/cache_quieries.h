@@ -43,13 +43,20 @@ inline float query_altitude(MemoryCache* cache, const glm::dvec2& lat_long)
             const auto bounds = srs::tile_bounds(layered_tile.id);
             const auto uv = (world_space - bounds.min) / bounds.size();
             const auto height_tile = QImage::fromData(*layered_tile.height);
+            float max_height = 0;
             assert(!height_tile.isNull());
             if (height_tile.isNull())
                 return 1000;
-            const auto x = int(uv.x * height_tile.width());
-            const auto y = int(uv.y * height_tile.height());
-            const auto rgb = QColor(height_tile.pixel(x, y));
-            return radix::height_encoding::to_float({rgb.red(), rgb.green(), rgb.blue()});
+            for(int i = 0; i < height_tile.width(); i++){
+                for(int j = 0; j < height_tile.height(); j++){
+                     const auto rgb = QColor(height_tile.pixel(i, j));
+                     float height = radix::height_encoding::to_float({rgb.red(), rgb.green(), rgb.blue()});
+                     if(height > max_height){
+                         max_height = height;
+                     }
+                }
+            }
+            return max_height;
         }
     }
 

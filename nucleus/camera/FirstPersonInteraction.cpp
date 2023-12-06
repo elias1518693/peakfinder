@@ -19,6 +19,7 @@
 
 #include "FirstPersonInteraction.h"
 #include "AbstractDepthTester.h"
+#include "srs.h"
 
 #include <QDebug>
 
@@ -30,6 +31,8 @@ std::optional<Definition> FirstPersonInteraction::mouse_move_event(const event_p
     if (e.buttons == Qt::LeftButton || e.buttons == Qt::MiddleButton) {
         const auto delta = e.point.position() - e.point.lastPosition();
         camera.orbit_clamped(camera.position(), glm::vec2(delta.x(), delta.y()) * -0.1f);
+        auto depth = depth_tester->position(camera.to_ndc({ e.point.position().x(), e.point.position().y() }));
+        qDebug()<<srs::world_to_lat_long_alt( glm::dvec3(depth)).z;
     }
 
     if (e.buttons == Qt::NoButton)

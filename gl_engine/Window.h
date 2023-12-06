@@ -112,6 +112,7 @@ private:
     bool m_sort_tiles = true;
     bool m_store_image = false;
     bool m_wireframe_enabled = false;
+    int m_counter = 0;
     QString m_debug_text;
     QString m_debug_scheduler_stats;
     QString m_file_name;
