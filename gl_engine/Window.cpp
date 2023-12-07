@@ -47,7 +47,7 @@
 #include "helpers.h"
 #include "SSAO.h"
 #include "ShadowMapping.h"
-
+#include <QDir>
 #include <glm/glm.hpp>
 #include <glm/gtx/transform.hpp>
 
@@ -318,7 +318,8 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
             QDir().mkdir("rendered_images");
         }
         qDebug()<<"saving image";
-        m_gbuffer->read_colour_attachment(0).save("rendered_images/" + m_file_name);
+        m_gbuffer->read_colour_attachment(0).save("rendered_images/"+m_file_name);
+        m_counter++;
         m_store_image = false;
         QCoreApplication::quit();
     }

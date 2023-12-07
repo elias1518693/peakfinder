@@ -78,7 +78,7 @@ void Controller::refine_altitude()
 
     const auto center = srs::world_to_lat_long({m_definition.position().x, m_definition.position().y});
 
-    double maxAltitude = m_data_querier->get_altitude({center});
+    double maxAltitude = m_data_querier->get_altitude({center}) + 2.0f;
     qDebug() <<"refinement altitude"<< maxAltitude;
     auto altitude = srs::lat_long_alt_to_world(glm::dvec3(center.x, center.y, maxAltitude));
 

@@ -47,16 +47,10 @@ inline float query_altitude(MemoryCache* cache, const glm::dvec2& lat_long)
             assert(!height_tile.isNull());
             if (height_tile.isNull())
                 return 1000;
-            for(int i = 0; i < height_tile.width(); i++){
-                for(int j = 0; j < height_tile.height(); j++){
-                     const auto rgb = QColor(height_tile.pixel(i, j));
-                     float height = radix::height_encoding::to_float({rgb.red(), rgb.green(), rgb.blue()});
-                     if(height > max_height){
-                         max_height = height;
-                     }
-                }
-            }
-            return max_height;
+            const auto rgb = QColor(height_tile.pixel(uv.x * height_tile.width(), (1.0f - uv.y) * height_tile.height()));
+            float height = radix::height_encoding::to_float({rgb.red(), rgb.green(), rgb.blue()});
+
+            return height;
         }
     }
 

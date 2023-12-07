@@ -405,7 +405,7 @@ def start_matching(image_path, rotate_degrees, fov):
             pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(rotationmatrix)
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
-            best_match_yaw = yaw
+            best_match_yaw = roll
             best_match_image_deg = i
             best_match_prob = match_prob
             best_match_h = H
