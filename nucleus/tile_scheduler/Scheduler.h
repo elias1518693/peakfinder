@@ -93,6 +93,7 @@ public slots:
     void set_network_reachability(QNetworkInformation::Reachability reachability);
     void update_gpu_quads();
     void send_quad_requests();
+    void set_new_position(const camera::Definition& camera);
     void purge_ram_cache();
     void persist_tiles();
 
@@ -115,6 +116,7 @@ private:
     static constexpr unsigned m_height_tile_size = 64;
     bool m_enabled = false;
     bool m_network_requests_enabled = true;
+    bool m_new_position = true;
     Statistics m_statistics;
     std::unique_ptr<QTimer> m_update_timer;
     std::unique_ptr<QTimer> m_purge_timer;

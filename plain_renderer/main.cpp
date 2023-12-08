@@ -125,6 +125,7 @@ int main(int argc, char* argv[])
         //reset camera to 0
         controller.camera_controller()->set_definition(nucleus::camera::Definition(glm::vec3(0), glm::vec3(0,1,0)));
         glWindow.render_window()->set_permissible_screen_space_error(0);
+        glWindow.render_window()->render_looped_changed(true);
         controller.camera_controller()->set_near_plane(1.0f);
 
 

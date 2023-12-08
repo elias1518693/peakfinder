@@ -146,6 +146,7 @@ void Controller::set_view_direction(const glm::dvec2& degrees){
 
 void Controller::update() const
 {
+    qDebug()<<"camera def changed";
     emit definition_changed(m_definition);
 }
 

@@ -52,7 +52,6 @@
 #include <glm/gtx/transform.hpp>
 
 #include "UniformBufferObjects.h"
-
 #include "nucleus/timing/TimerManager.h"
 #include "nucleus/timing/TimerInterface.h"
 #include "nucleus/timing/CpuTimer.h"
@@ -318,10 +317,16 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
             QDir().mkdir("rendered_images");
         }
         qDebug()<<"saving image";
-        m_gbuffer->read_colour_attachment(0).save("rendered_images/"+m_file_name);
+        QString number = QString::number(m_counter);
+        m_gbuffer->read_colour_attachment(0).save("rendered_images/"+m_file_name+"_"+number+".jpg");
         m_counter++;
         m_store_image = false;
-        QCoreApplication::quit();
+
+        m_camera.orbit(m_camera.position(), glm::dvec2(m_camera.field_of_view(),0));
+        emit new_position(m_camera);
+        update_camera(m_camera);
+        if(m_counter >= 360/m_camera.field_of_view())
+            QCoreApplication::quit();
     }
     QList<nucleus::timing::TimerReport> new_values = m_timer->fetch_results();
     if (new_values.size() > 0) {

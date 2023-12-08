@@ -90,7 +90,8 @@ Controller::Controller(AbstractRenderWindow* render_window)
         connect(qa, &QuadAssembler::quad_loaded, m_camera_controller.get(), &nucleus::camera::Controller::refine_altitude);
         connect(sch, &Scheduler::all_quads_loaded, m_render_window, &AbstractRenderWindow::store_next_image);
         connect(sch, &Scheduler::all_quads_loaded, sch, &Scheduler::persist_tiles);
-
+        connect(m_render_window, &AbstractRenderWindow::new_position, sch, &Scheduler::set_new_position);
+        //connect(m_render_window, &AbstractRenderWindow::new_position, m_camera_controller.get(), &nucleus::camera::Controller::update);
         connect(m_ortho_service.get(), &TileLoadService::load_finished, la, &LayerAssembler::deliver_ortho);
         connect(m_terrain_service.get(), &TileLoadService::load_finished, la, &LayerAssembler::deliver_height);
         connect(la, &LayerAssembler::tile_loaded, qa, &QuadAssembler::deliver_tile);

@@ -61,6 +61,7 @@ public slots:
     virtual void store_next_image() = 0;
 signals:
     void update_requested();
+    void new_position(const camera::Definition& camera);
     void key_pressed(const QKeyCombination&) const;
     void key_released(const QKeyCombination&) const;
     void gpu_ready_changed(bool ready);

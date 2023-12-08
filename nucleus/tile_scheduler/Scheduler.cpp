@@ -214,10 +214,22 @@ void Scheduler::send_quad_requests()
     });
     if(currently_active_tiles.size() == 0){
         qDebug()<<"alls quads loaded";
+        if(m_new_position){
+            qDebug()<<"gogogo render";
+            m_new_position=false;
+            emit all_quads_loaded();
 
-        emit all_quads_loaded();
+        }
     }
     emit quads_requested(currently_active_tiles);
+}
+
+void Scheduler::set_new_position(const camera::Definition& camera){
+    qDebug()<<"new position is set";
+    update_camera(camera);
+    update_gpu_quads();
+    m_new_position = true;
+
 }
 
 void Scheduler::purge_ram_cache()

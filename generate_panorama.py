@@ -201,7 +201,7 @@ def readExif(file_path):
             return latitude_dd, longitude_dd, height_dd, fov
 
 
-def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, alt, fov):
+def start_renderer(renderer_path, image_path, lat, long, alt, fov):
     try: 
         img = Image.open(image_path)
         width, height = img.size
@@ -211,24 +211,17 @@ def start_renderer(renderer_path, image_path, rotate_degrees, lat, long, alt, fo
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
 
-        while i <= 360:
-            orientation = f" {i} 0 0" 
-            new_file_name = f"{file_name}_{i}_d{file_extension}"
-            cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
-            i += rotate_degrees
-            print("Running:", cmd)
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
-            output = stdout.decode()
-            error = stderr.decode()
-
-
-            process.wait()
+        orientation = f" 0 0 0"
+        cmd = f"{renderer_path} {file_name} {parameters} {orientation} {width} {height}"
+        print("Running:", cmd)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        output = stdout.decode()
+        error = stderr.decode()
+        process.wait()
                         # Print or process the output and error
-            print("Output:", output)
-            print("Error:", error)
-            # Decode the output and error (as they are in bytes format)
-            
+        print("Output:", output)
+        print("Error:", error)
 
     except Exception as e:
         print("Error:", str(e))
@@ -305,7 +298,7 @@ def rotation_matrix_to_pitch_yaw_roll(H):
     print(f"pitch:{pitch} roll:{roll} yaw:{yaw}")
     return pitch, yaw, roll
     
-def start_matching(image_path, rotate_degrees, fov):
+def start_matching(image_path, fov):
     # Open the database.
     db = COLMAPDatabase.connect("testdatabase.db")
     db.create_tables()
@@ -337,21 +330,19 @@ def start_matching(image_path, rotate_degrees, fov):
     
     original_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)  # Load the original image in grayscale
     best_match_image_path = ""
-    best_match_image_degree = 0.0
     best_match_prob = 0.0
     best_match_yaw = 0.0
     best_match_pitch = 0.0
     best_roll = 0.0
     best_match_image_deg = 0
     best_match_h = None
-    device = K.utils.get_cuda_device_if_available()
     allkeypoints = np.empty((0,2))
     if not os.path.exists('./matches'):
         os.makedirs('matches')
-    while i <= 360:
-        new_image_path = f"rendered_images/{file_name}_{i}_d{file_extension}"
-        matched_image_path = f"matches/{file_name}_{i}_d_matched{file_extension}"
-        image_id = db.add_image(f"{file_name}_{i}_d{file_extension}", camera_id2)
+    for i in range(int(360/fov)):
+        new_image_path = f"rendered_images/{file_name}_{i}.jpg"
+        matched_image_path = f"matches/{file_name}_{i}_matched.jpg"
+        image_id = db.add_image(f"{file_name}_{i}.jpg", camera_id2)
 
         img1 = load_torch_image(image_path, target_size)
         img2 = load_torch_image(new_image_path, target_size)
@@ -368,13 +359,11 @@ def start_matching(image_path, rotate_degrees, fov):
         mkpts0[:, 0] *= height/screenheight
         mkpts0[:, 1] *= width/screenwidth
         if mkpts0.size < 10 or mkpts1.size < 10:
-            i += rotate_degrees
             continue
         db.add_keypoints(image_id, mkpts1)
        
         H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
         if H is None:
-            i+=rotate_degrees
             continue
 
         matches = np.where(inliers.ravel() == 1)[0]
@@ -388,11 +377,9 @@ def start_matching(image_path, rotate_degrees, fov):
         #rotation_matrix_to_pitch_yaw_roll(R)
         db.add_matches(image_id_original, image_id, matches)
         inliers = inliers > 0
-        if(inliers.size < 0):
-            i += rotate_degrees
-            continue
         if H is None or inliers is None:
-            i += rotate_degrees
+            continue
+        if(inliers.size < 0):
             continue
         match_prob = inliers.size
         #theta = np.arctan2(H[1, 0], H[0, 0])
@@ -429,7 +416,6 @@ def start_matching(image_path, rotate_degrees, fov):
                    'feature_color': (0.2, 0.5, 1), 'vertical': False},
                    ax=ax,)
         plt.savefig(matched_image_path)
-        i += rotate_degrees
     # Print the results
     db.add_keypoints(image_id_original, allkeypoints)
     db.commit()
@@ -477,12 +463,11 @@ if __name__ == "__main__":
     if lat is not None:
         fov = math.degrees(fov)
     else:
-        lat, long, height, fov = readExif(image_path)   
-    rotate_degrees = round(fov-5)
+        lat, long, height, fov = readExif(image_path)
     # Start the renderer with the specified parameters and select an image
-    start_renderer(renderer_path,  image_path, rotate_degrees, lat, long, height, fov)
+    start_renderer(renderer_path,  image_path, lat, long, height, fov)
     
-    yaw, pitch, roll = start_matching(image_path, rotate_degrees, fov)
+    yaw, pitch, roll = start_matching(image_path, fov)
     
     render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
     
