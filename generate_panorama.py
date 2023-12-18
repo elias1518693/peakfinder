@@ -80,11 +80,12 @@ def read_info(file_path):
         print("Error:", str(e))
         return None, None, None, None
 
+
 def scale_to_fit_screen(image_width, image_height, screen_width, screen_height):
     # Calculate the aspect ratio of both the image and the screen
     image_aspect_ratio = image_width / image_height
     screen_aspect_ratio = screen_width / screen_height
-    ratio = 0
+
     # Determine if the image needs to be scaled based on width or height
     if image_aspect_ratio > screen_aspect_ratio:
         # Scale based on width
@@ -94,13 +95,16 @@ def scale_to_fit_screen(image_width, image_height, screen_width, screen_height):
         # Scale based on height
         scaled_height = screen_height
         scaled_width = scaled_height * image_aspect_ratio
-    
+
     # Ensure that the scaled dimensions are integers and do not exceed the screen size
     scaled_width = min(screen_width, int(scaled_width))
     scaled_height = min(screen_height, int(scaled_height))
-    
+
+    # Adjust dimensions to be divisible by 8
+    scaled_width = scaled_width - scaled_width % 8
+    scaled_height = scaled_height - scaled_height % 8
+
     return scaled_width, scaled_height
-   
 
 
 # Create a function to convert from Degrees Minutes Seconds to decimal degrees
@@ -237,7 +241,7 @@ def start_renderer(renderer_path, image_path, lat, long, alt, fov):
         width, height = img.size
         fov_vert = math.degrees(2.0 * math.atan(math.tan(math.radians(fov) / 2.0) * height / width))
         print(f'horizontal fov: {fov} vertical fov: {fov_vert}')
-        width, height = scale_to_fit_screen(width, height, 1920, 1080)
+        width, height = scale_to_fit_screen(width, height, 960, 540)
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         orientation = f" 0 0 0"
         cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {width} {height} {0}"
@@ -260,7 +264,7 @@ def render_result(renderer_path, image_path, yaw, lat, long, alt, fov, pitch, ro
     try:
         img = Image.open(image_path)
         width, height = img.size  
-        width, height = scale_to_fit_screen(width, height, 1920, 1080)        
+        width, height = scale_to_fit_screen(width, height, 960, 540)
         parameters = f" {lat} {long} {alt} {fov}"
         i = 0
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
@@ -335,16 +339,18 @@ def rot_params_rv(rvecs):
     print(f"yaw:{yaw} pitch:{pitch} roll:{roll} ")
     return pitch, yaw, roll
 def start_matching(image_path, fov):
+
     # Open the database.
     db = COLMAPDatabase.connect("testdatabase.db")
     db.create_tables()
 
     img = Image.open(image_path)
     width, height = img.size
-    screenwidth, screenheight = scale_to_fit_screen(width, height, 1920, 1080)
+    screenwidth, screenheight = scale_to_fit_screen(width, height, 960, 540)
+    fov_vert = math.degrees(2.0 * math.atan(math.tan(math.radians(fov) / 2.0) * screenheight / screenwidth))
     camera_matrix = calculate_camera_matrix(fov, screenwidth, screenheight)
     i = 0
-    target_size = (int(screenwidth/2), int(screenheight/2))
+    target_size = (int(screenwidth), int(screenheight))
     print(target_size)
     original_path = image_path
     file_name, file_extension = os.path.splitext(os.path.basename(image_path))
@@ -378,8 +384,8 @@ def start_matching(image_path, fov):
     allkeypoints = np.empty((0,2))
     if not os.path.exists('./matches'):
         os.makedirs('matches')
-    for i in range(int(360/fov)):
-        print(f'matching image {i} with {fov * i} degrees:')
+    for i in range(int(360/fov_vert)):
+        print(f'matching image {i} with {fov_vert * i} degrees:')
         new_image_path = f"rendered_images/{file_name}_{i}.jpg"
         matched_image_path = f"matches/{file_name}_{i}_matched.jpg"
         image_id = db.add_image(f"{file_name}_{i}.jpg", camera_id2)
@@ -400,7 +406,7 @@ def start_matching(image_path, fov):
             continue
         db.add_keypoints(image_id, mkpts1)
        
-        H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.2, 0.99999, 50000)
+        H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 1, 0.999999, 500000)
         if H is None:
             continue
 
@@ -408,9 +414,9 @@ def start_matching(image_path, fov):
         matches =np.array([matches + allkeypoints.size/2,matches]).T
         print(f"matches: {matches.size}")
         allkeypoints = np.vstack((allkeypoints, mkpts0))
-        E, mask = cv2.findFundamentalMat(mkpts0, mkpts1, camera_matrix)
-        retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, camera_matrix)
-        rotation_matrix_to_pitch_yaw_roll(R)
+
+        F, F_innliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.1845, 0.999999, 500000)
+        print(f'fundamental inliers: {np.where(F_innliers.ravel() == (1))[0].size}')
         db.add_matches(image_id_original, image_id, matches)
         if H is None or inliers is None:
             continue
@@ -428,10 +434,10 @@ def start_matching(image_path, fov):
 
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
-            best_match_yaw = yaw
-            best_match_pitch = pitch
+            best_match_yaw = pitch
+            best_match_pitch = yaw
             best_roll = roll
-            best_match_image_deg = i * fov
+            best_match_image_deg = i * fov_vert
             best_match_prob = match_prob
             best_match_h = H
         
