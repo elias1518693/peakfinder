@@ -382,6 +382,9 @@ def start_matching(image_path, fov):
     best_match_image_deg = 0
     best_match_h = None
     allkeypoints = np.empty((0,2))
+    device = torch.device('cuda')
+    matcher = KF.LoFTR(pretrained='outdoor')
+    matcher = matcher.to(device).eval()
     if not os.path.exists('./matches'):
         os.makedirs('matches')
     for i in range(int(360/fov_vert)):
@@ -393,15 +396,13 @@ def start_matching(image_path, fov):
         img1 = load_torch_image(image_path, target_size)
         img2 = load_torch_image(new_image_path, target_size)
 
-        matcher = KF.LoFTR(pretrained='outdoor')
-
-        input_dict = {"image0": K.color.rgb_to_grayscale(img1), # LofTR works on grayscale images only 
-                      "image1": K.color.rgb_to_grayscale(img2)}
+        input_dict = {"image0": K.color.rgb_to_grayscale(img1).to(device), # LofTR works on grayscale images only
+                      "image1": K.color.rgb_to_grayscale(img2).to(device)}
 
         with torch.no_grad():
             correspondences = matcher(input_dict)
-        mkpts0 = correspondences['keypoints0'].numpy()
-        mkpts1 = correspondences['keypoints1'].numpy()
+        mkpts0 = correspondences['keypoints0'].cpu().numpy()
+        mkpts1 = correspondences['keypoints1'].cpu().numpy()
         if mkpts0.size < 10 or mkpts1.size < 10:
             continue
         db.add_keypoints(image_id, mkpts1)
@@ -415,7 +416,7 @@ def start_matching(image_path, fov):
         print(f"matches: {matches.size}")
         allkeypoints = np.vstack((allkeypoints, mkpts0))
 
-        F, F_innliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.1845, 0.999999, 500000)
+        F, F_innliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 1, 0.999999, 500000)
         print(f'fundamental inliers: {np.where(F_innliers.ravel() == (1))[0].size}')
         db.add_matches(image_id_original, image_id, matches)
         if H is None or inliers is None:
