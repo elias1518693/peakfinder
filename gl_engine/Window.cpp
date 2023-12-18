@@ -321,12 +321,14 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
         m_gbuffer->read_colour_attachment(0).save("rendered_images/"+m_file_name+"_"+number+".jpg");
         m_counter++;
         m_store_image = false;
-
         m_camera.orbit(m_camera.position(), glm::dvec2(m_camera.field_of_view(),0));
-        emit new_position(m_camera);
-        update_camera(m_camera);
-        if(m_counter >= 360/m_camera.field_of_view())
+
+        if(m_counter >= 360/m_camera.field_of_view() || m_single_image_flag)
             QCoreApplication::quit();
+        update_camera(m_camera);
+        emit new_position(m_camera);
+        //currently is workaround solution, if render looped is set imidiatly then the first image is drawn too early and black
+        m_render_looped = true;
     }
     QList<nucleus::timing::TimerReport> new_values = m_timer->fetch_results();
     if (new_values.size() > 0) {
@@ -365,6 +367,10 @@ void Window::shared_config_changed(gl_engine::uboSharedConfig ubo) {
 
 void Window::render_looped_changed(bool render_looped_flag) {
     m_render_looped = render_looped_flag;
+}
+
+void Window::render_single_image(bool singe_image_flag) {
+    m_single_image_flag = singe_image_flag;
 }
 
 void Window::reload_shader() {

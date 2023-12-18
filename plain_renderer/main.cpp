@@ -114,18 +114,19 @@ int main(int argc, char* argv[])
         float lon = std::atof(argv[3]);
         float alt = std::atof(argv[4]);
         float horizontal_fov_deg = std::atof(argv[5]);
-        double pitch =std::atof(argv[6]);
-        double yaw = std::atof(argv[7]);
+        double yaw =std::atof(argv[6]);
+        double pitch = std::atof(argv[7]);
         double roll = std::atof(argv[8]);
         float pixel_width = std::atof(argv[9]);
         float pixel_height = std::atof(argv[10]);
+        bool render_single_image = std::atof(argv[11]);
 
         glWindow.render_window()->setFileName(filename);
 
         //reset camera to 0
         controller.camera_controller()->set_definition(nucleus::camera::Definition(glm::vec3(0), glm::vec3(0,1,0)));
         glWindow.render_window()->set_permissible_screen_space_error(0);
-        glWindow.render_window()->render_looped_changed(true);
+         glWindow.render_window()->render_single_image(render_single_image);
         controller.camera_controller()->set_near_plane(1.0f);
 
 
@@ -136,7 +137,7 @@ int main(int argc, char* argv[])
         qDebug()<<verticalFOV;
         controller.camera_controller()->set_field_of_view(verticalFOV);
 
-        controller.camera_controller()->set_view_direction(glm::dvec2(pitch, yaw));
+        controller.camera_controller()->set_view_direction(glm::dvec2(yaw, pitch));
         controller.camera_controller()->roll(roll);
 
 

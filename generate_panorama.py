@@ -131,6 +131,36 @@ def height_to_dd(height):
         height_dd = height
     return height_dd
 
+def image_resize(image, width = None, height = None, inter = cv2.INTER_AREA):
+    # initialize the dimensions of the image to be resized and
+    # grab the image size
+    dim = None
+    (h, w) = image.shape[:2]
+
+    # if both the width and height are None, then return the
+    # original image
+    if width is None and height is None:
+        return image
+
+    # check to see if the width is None
+    if width is None:
+        # calculate the ratio of the height and construct the
+        # dimensions
+        r = height / float(h)
+        dim = (int(w * r), height)
+
+    # otherwise, the height is None
+    else:
+        # calculate the ratio of the width and construct the
+        # dimensions
+        r = width / float(w)
+        dim = (width, int(h * r))
+
+    # resize the image
+    resized = cv2.resize(image, dim, interpolation = inter)
+
+    # return the resized image
+    return dim
 def calculate_fov(tags, image_dimensions):
     # Extract focal length
     focal_length_tag = tags.get('EXIF FocalLength')
@@ -205,14 +235,12 @@ def start_renderer(renderer_path, image_path, lat, long, alt, fov):
     try: 
         img = Image.open(image_path)
         width, height = img.size
-        width, height = scale_to_fit_screen(width, height, 1920, 1080)        
-        parameters = f" {lat} {long} {alt} {fov}"
-        i = 0
+        fov_vert = math.degrees(2.0 * math.atan(math.tan(math.radians(fov) / 2.0) * height / width))
+        print(f'horizontal fov: {fov} vertical fov: {fov_vert}')
+        width, height = scale_to_fit_screen(width, height, 1920, 1080)
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
-        processes = []  # List to store subprocess objects
-
         orientation = f" 0 0 0"
-        cmd = f"{renderer_path} {file_name} {parameters} {orientation} {width} {height}"
+        cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {width} {height} {0}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
@@ -228,7 +256,7 @@ def start_renderer(renderer_path, image_path, lat, long, alt, fov):
         return -1
         
         
-def render_result(renderer_path, image_path, angle, lat, long, alt, fov, pitch, roll):
+def render_result(renderer_path, image_path, yaw, lat, long, alt, fov, pitch, roll):
     try:
         img = Image.open(image_path)
         width, height = img.size  
@@ -238,9 +266,9 @@ def render_result(renderer_path, image_path, angle, lat, long, alt, fov, pitch, 
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         processes = []  # List to store subprocess objects
 
-        orientation = f" {angle} {pitch} {roll}"
-        new_file_name = f"{file_name}_result_d{file_extension}"
-        cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height}"
+        orientation = f" {yaw} {pitch} {roll}"
+        new_file_name = f"{file_name}_result"
+        cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height} {1}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         process.wait()        
@@ -279,14 +307,15 @@ def calculate_camera_matrix(horizontal_fov, width, height):
     camera_matrix = np.array([[fx, 0, cx],
                               [0, fy, cy],
                               [0, 0, 1]])
+    print(f'camera matrix: {camera_matrix}')
     return camera_matrix
 def rotation_matrix_to_pitch_yaw_roll(H):
     sy = np.sqrt(H[0,0] * H[0,0] +  H[1,0] * H[1,0])
     singular = sy < 1e-6
     if not singular:
-        x = np.arctan2(H[2,1] , H[2,2])
-        y = np.arctan2(-H[2,0], sy)
-        z = np.arctan2(H[1,0], H[0,0])
+        x = np.arctan2(-H[2,1] , H[2,2])
+        y = np.arcsin(H[2,0])
+        z = np.arctan2(-H[1,0], H[0,0])
     else:
         x = np.arctan2(-H[1,2], H[1,1])
         y = np.arctan2(-H[2,0], sy)
@@ -295,9 +324,16 @@ def rotation_matrix_to_pitch_yaw_roll(H):
     roll = np.degrees(x)
     pitch = np.degrees(y)
     yaw = np.degrees(z)
-    print(f"pitch:{pitch} roll:{roll} yaw:{yaw}")
+    print(f"yaw:{yaw} pitch:{pitch} roll:{roll} ")
+    return yaw, pitch, roll
+
+def rot_params_rv(rvecs):
+    R = cv2.Rodrigues(rvecs)[0]
+    roll = 180*math.atan2(-R[2][1], R[2][2])/math.pi
+    pitch = 180*math.asin(R[2][0])/math.pi
+    yaw = 180*math.atan2(-R[1][0], R[0][0])/math.pi
+    print(f"yaw:{yaw} pitch:{pitch} roll:{roll} ")
     return pitch, yaw, roll
-    
 def start_matching(image_path, fov):
     # Open the database.
     db = COLMAPDatabase.connect("testdatabase.db")
@@ -312,6 +348,10 @@ def start_matching(image_path, fov):
     print(target_size)
     original_path = image_path
     file_name, file_extension = os.path.splitext(os.path.basename(image_path))
+    scaled_image_path = f"rendered_images/{file_name}_scaled.jpg"
+    scaled_image = cv2.resize(cv2.imread(image_path), (int(screenwidth), int(screenheight)))
+    cv2.imwrite(scaled_image_path, scaled_image)
+
     model11, width1, height1, params1 = (
         "SIMPLE_RADIAL",
         width,
@@ -326,9 +366,8 @@ def start_matching(image_path, fov):
     )
     camera_id1 = db.add_camera(model11, width1, height1, params1)
     camera_id2 = db.add_camera(model12, width2, height2, params2)
-    image_id_original = db.add_image(f"{file_name}{file_extension}", camera_id1)
-    
-    original_image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)  # Load the original image in grayscale
+    image_id_original = db.add_image(f'{file_name}_scaled.jpg', camera_id1)
+
     best_match_image_path = ""
     best_match_prob = 0.0
     best_match_yaw = 0.0
@@ -340,6 +379,7 @@ def start_matching(image_path, fov):
     if not os.path.exists('./matches'):
         os.makedirs('matches')
     for i in range(int(360/fov)):
+        print(f'matching image {i} with {fov * i} degrees:')
         new_image_path = f"rendered_images/{file_name}_{i}.jpg"
         matched_image_path = f"matches/{file_name}_{i}_matched.jpg"
         image_id = db.add_image(f"{file_name}_{i}.jpg", camera_id2)
@@ -354,34 +394,29 @@ def start_matching(image_path, fov):
 
         with torch.no_grad():
             correspondences = matcher(input_dict)
-        mkpts0 = correspondences['keypoints0'].numpy() * 2
-        mkpts1 = correspondences['keypoints1'].numpy() * 2
-        mkpts0[:, 0] *= height/screenheight
-        mkpts0[:, 1] *= width/screenwidth
+        mkpts0 = correspondences['keypoints0'].numpy()
+        mkpts1 = correspondences['keypoints1'].numpy()
         if mkpts0.size < 10 or mkpts1.size < 10:
             continue
         db.add_keypoints(image_id, mkpts1)
        
-        H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.5, 0.999, 100000)
+        H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 0.2, 0.99999, 50000)
         if H is None:
             continue
 
-        matches = np.where(inliers.ravel() == 1)[0]
-        print( mkpts0.size)
+        matches = np.where(inliers.ravel() == (1))[0]
         matches =np.array([matches + allkeypoints.size/2,matches]).T
-        print(allkeypoints.size/2)
         print(f"matches: {matches.size}")
         allkeypoints = np.vstack((allkeypoints, mkpts0))
-        #E, mask = cv2.findEssentialMat(mkpts0, mkpts1, cameraMatrix)
-        #retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, cameraMatrix)
-        #rotation_matrix_to_pitch_yaw_roll(R)
+        E, mask = cv2.findFundamentalMat(mkpts0, mkpts1, camera_matrix)
+        retval, R, t, mask = cv2.recoverPose(E, mkpts0, mkpts1, camera_matrix)
+        rotation_matrix_to_pitch_yaw_roll(R)
         db.add_matches(image_id_original, image_id, matches)
-        inliers = inliers > 0
         if H is None or inliers is None:
             continue
-        if(inliers.size < 0):
+        if(matches.size < 0):
             continue
-        match_prob = inliers.size
+        match_prob = matches.size
         #theta = np.arctan2(H[1, 0], H[0, 0])
         #yaw = np.degrees(theta)  # Convert radians to degrees
         num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, camera_matrix)
@@ -389,11 +424,14 @@ def start_matching(image_path, fov):
         yaw = 0
         roll = 0
         for rotationmatrix in Rs:
-            pitch, yaw, roll = rotation_matrix_to_pitch_yaw_roll(rotationmatrix)
+            yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(rotationmatrix)
+
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
-            best_match_yaw = roll
-            best_match_image_deg = i
+            best_match_yaw = yaw
+            best_match_pitch = pitch
+            best_roll = roll
+            best_match_image_deg = i * fov
             best_match_prob = match_prob
             best_match_h = H
         
@@ -425,17 +463,16 @@ def start_matching(image_path, fov):
     if best_match_h is not None:
         # Load the best match image
         best_match_image = cv2.imread(best_match_image_path)
-        # Load the original image
-        original_image_color = cv2.imread(original_path)
+
         # Assuming the original image is not grayscale because we're going to overlay it
-        h, w = original_image_color.shape[:2]
+        h, w = scaled_image.shape[:2]
         # Apply the warpPerspective function with the correct parameters
         warped_image = cv2.warpPerspective(best_match_image, best_match_h, (w, h), flags = cv2.WARP_INVERSE_MAP)
 
         # Overlay the warped image onto the original image
         # You can adjust the alpha value to make the overlay transparent
         alpha = 0.5
-        overlay_image = cv2.addWeighted(original_image_color, 1 - alpha, warped_image, alpha, 0)
+        overlay_image = cv2.addWeighted(scaled_image, 1 - alpha, warped_image, alpha, 0)
 
         # Save or show the overlay image
         overlay_image_path = f"overlay_{file_name}.png"
@@ -464,9 +501,10 @@ if __name__ == "__main__":
         fov = math.degrees(fov)
     else:
         lat, long, height, fov = readExif(image_path)
+
     # Start the renderer with the specified parameters and select an image
     start_renderer(renderer_path,  image_path, lat, long, height, fov)
-    
+
     yaw, pitch, roll = start_matching(image_path, fov)
     
     render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)

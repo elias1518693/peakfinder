@@ -73,7 +73,7 @@ public:
     void keyReleaseEvent(QKeyEvent*);
     void updateCameraEvent();
     void set_permissible_screen_space_error(float new_error) override;
-
+    void render_single_image(bool single_image_flag);
 public slots:
     void update_camera(const nucleus::camera::Definition& new_definition) override;
     void update_debug_scheduler_stats(const QString& stats) override;
@@ -112,6 +112,7 @@ private:
     bool m_sort_tiles = true;
     bool m_store_image = false;
     bool m_wireframe_enabled = false;
+    bool m_single_image_flag = false;
     int m_counter = 0;
     QString m_debug_text;
     QString m_debug_scheduler_stats;
