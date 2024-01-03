@@ -212,6 +212,7 @@ void Scheduler::send_quad_requests()
     std::erase_if(currently_active_tiles, [this, current_time](const tile::Id& id) {
         return m_ram_cache.contains(id) && m_ram_cache.peak_at(id).network_info().timestamp + m_retirement_age_for_tile_cache > current_time;
     });
+    qDebug()<<currently_active_tiles.size();
     if(currently_active_tiles.size() == 0){
         qDebug()<<"alls quads loaded";
         if(m_new_position){

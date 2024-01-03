@@ -2,6 +2,7 @@ import subprocess
 import tkinter as tk
 import exifread
 import os
+import socket
 from tkinter import filedialog
 import math
 import cv2
@@ -29,6 +30,20 @@ def load_torch_image(fname, target_size):
     
     return img
 
+def decode_byte_array(byte_array, width, height):
+    # Assuming the format is RGBA32F, which has 4 channels (RGBA) of 32-bit floats
+    num_channels = 4
+
+    # Convert QByteArray to bytes (this step may vary depending on how you receive the data)
+    raw_data = bytes(byte_array)
+
+    # Create a NumPy array from the raw data
+    image_array = np.frombuffer(raw_data, dtype=np.float32)
+
+    # Reshape the array to match the image dimensions and channels
+    # The order is height, width, and then number of channels
+    image_array = image_array.reshape((height, width, num_channels))
+    return image_array
 def select_image():
     root = tk.Tk()
     root.withdraw()
@@ -244,16 +259,22 @@ def start_renderer(renderer_path, image_path, lat, long, alt, fov):
         width, height = scale_to_fit_screen(width, height, 960, 540)
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         orientation = f" 0 0 0"
-        cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {width} {height} {0}"
+        cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {width} {height} {1}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
         output = stdout.decode()
         error = stderr.decode()
-        process.wait()
-                        # Print or process the output and error
-        print("Output:", output)
-        print("Error:", error)
+
+
+
+        # Convert the line to a bytes object
+        byte_data = bytes.fromhex(output.strip())
+
+        # Decode the byte data to an image
+        byte_array = decode_byte_array(byte_data, width, height)
+        return byte_array
+
 
     except Exception as e:
         print("Error:", str(e))
@@ -338,7 +359,7 @@ def rot_params_rv(rvecs):
     yaw = 180*math.atan2(-R[1][0], R[0][0])/math.pi
     print(f"yaw:{yaw} pitch:{pitch} roll:{roll} ")
     return pitch, yaw, roll
-def start_matching(image_path, fov):
+def start_matching(image_path, fov, byte_array):
 
     # Open the database.
     db = COLMAPDatabase.connect("testdatabase.db")
@@ -406,7 +427,7 @@ def start_matching(image_path, fov):
         if mkpts0.size < 10 or mkpts1.size < 10:
             continue
         db.add_keypoints(image_id, mkpts1)
-       
+
         H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 1, 0.999999, 500000)
         if H is None:
             continue
@@ -415,6 +436,30 @@ def start_matching(image_path, fov):
         matches =np.array([matches + allkeypoints.size/2,matches]).T
         print(f"matches: {matches.size}")
         allkeypoints = np.vstack((allkeypoints, mkpts0))
+
+        inlier_points1 = mkpts1[np.where(inliers.ravel() == (1))[0]]
+        ws_array = np.zeros((inlier_points1.shape[0], 3))
+        for idx, keypoint in enumerate(inlier_points1):
+            # Convert keypoint coordinates to integers
+            x_index = int(keypoint[0])
+            y_index = int(keypoint[1])
+
+            # Ensure that indices are within the array bounds
+            if 0 <= x_index < byte_array.shape[0] and 0 <= y_index < byte_array.shape[1]:
+                print(byte_array[x_index, y_index][:3])
+                ws_array[idx] = byte_array[x_index, y_index][:3]
+            else:
+                print(f'x index: {x_index}  y index: {y_index}')
+        # Define the distortion coefficients. Set this according to your camera's properties.
+        # If you don't have distortion coefficients, you can start with zeros.
+        dist_coeffs = np.zeros((4, 1))  # Modify if you have specific distortion coefficients
+
+        # SolvePnP returns the rotation and translation vectors
+        success, rotation_vector, translation_vector, pose_inliers = cv2.solvePnPRansac(ws_array,  mkpts1[np.where(inliers.ravel() == (1))[0]], camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
+        print(f'success: {success} \n rotation vector: {rotation_vector} \n translation vector: {translation_vector}')
+
+
+
 
         F, F_innliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 1, 0.999999, 500000)
         print(f'fundamental inliers: {np.where(F_innliers.ravel() == (1))[0].size}')
@@ -510,10 +555,10 @@ if __name__ == "__main__":
         lat, long, height, fov = readExif(image_path)
 
     # Start the renderer with the specified parameters and select an image
-    start_renderer(renderer_path,  image_path, lat, long, height, fov)
+    byte_array = start_renderer(renderer_path,  image_path, lat, long, height, fov)
 
-    yaw, pitch, roll = start_matching(image_path, fov)
+    yaw, pitch, roll = start_matching(image_path, fov, byte_array)
     
-    render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
+    #render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
     
     

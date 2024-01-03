@@ -297,6 +297,41 @@ QImage Framebuffer::read_colour_attachment(unsigned index)
     return image;
 }
 
+QByteArray Framebuffer::read_colour_attachment_to_array(unsigned index) {
+    assert(index >= 0 && index < m_colour_textures.size());
+
+    auto texFormat = m_colour_definitions[index].format;
+
+    bind();
+    QOpenGLExtraFunctions* f = QOpenGLContext::currentContext()->extraFunctions();
+    f->glReadBuffer(GL_COLOR_ATTACHMENT0 + index);
+
+    const int width = static_cast<int>(m_size.x);
+    const int height = static_cast<int>(m_size.y);
+
+    if (texFormat == ColourFormat::RGBA32F) {
+        // Handling 32-bit float texture
+        const int numFloats = width * height * 4; // 4 for RGBA
+        QByteArray byteArray;
+        byteArray.resize(numFloats * sizeof(float)); // Allocate memory
+
+        f->glReadPixels(0, 0, width, height, GL_RGBA, GL_FLOAT, byteArray.data());
+
+        return byteArray;
+    } else if (texFormat == ColourFormat::RGBA8) {
+        // Original handling for RGBA8
+        QByteArray byteArray;
+        byteArray.resize(width * height * 4); // 4 bytes per pixel for RGBA8
+
+        f->glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, byteArray.data());
+
+        return byteArray;
+    } else {
+        qWarning() << "Reading back a different texture format than RGBA8 or RGBA32F is not recommended.";
+        return QByteArray(); // return an empty byte array
+    }
+}
+
 std::array<uchar, 4> Framebuffer::read_colour_attachment_pixel(unsigned index, const glm::dvec2& normalised_device_coordinates)
 {
     assert(index >= 0 && index < m_colour_textures.size());

@@ -84,7 +84,7 @@ public:
     std::unique_ptr<QOpenGLTexture> take_and_replace_colour_attachment(unsigned index);
 
     QImage read_colour_attachment(unsigned index);
-
+    QByteArray read_colour_attachment_to_array(unsigned index);
     // Returns the data at the given pixel. Only works for RGBA8 textures, but is memory safe.
     std::array<uchar, 4> read_colour_attachment_pixel(unsigned index, const glm::dvec2& normalised_device_coordinates);
 

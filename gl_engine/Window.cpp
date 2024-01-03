@@ -56,6 +56,7 @@
 #include "nucleus/timing/TimerInterface.h"
 #include "nucleus/timing/CpuTimer.h"
 #include "nucleus/utils/bit_coding.h"
+#include "qtcpsocket.h"
 #if (defined(__linux) && !defined(__ANDROID__)) || defined(_WIN32) || defined(_WIN64)
 #include "GpuAsyncQueryTimer.h"
 #endif
@@ -173,6 +174,28 @@ void Window::resize_framebuffer(int width, int height)
     m_ssao->resize({width, height});
 
     f->glViewport(0, 0, width, height);
+}
+void sendImage(QImage &image) {
+    QTcpSocket socket;
+    socket.connectToHost("127.0.0.1", 12345); // IP and port of the Python server
+
+    if (!socket.waitForConnected()) {
+        qDebug() << "Connection Failed!";
+        return;
+    }
+
+    QByteArray byteArray(reinterpret_cast<const char*>(image.constBits()), image.sizeInBytes());
+
+           // Sending the image size first
+    qint32 size = byteArray.size();
+    socket.write(reinterpret_cast<const char*>(&size), sizeof(size));
+    socket.waitForBytesWritten();
+
+           // Sending the image data
+    socket.write(byteArray);
+    socket.waitForBytesWritten();
+
+    socket.disconnectFromHost();
 }
 
 void Window::paint(QOpenGLFramebufferObject* framebuffer)
@@ -317,12 +340,17 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
             QDir().mkdir("rendered_images");
         }
         qDebug()<<"saving image";
+
         QString number = QString::number(m_counter);
+        QByteArray currentPositionImage = m_gbuffer->read_colour_attachment_to_array(1);
+        QTextStream out(stdout);
+        out << currentPositionImage.toHex();
+
         m_gbuffer->read_colour_attachment(0).save("rendered_images/"+m_file_name+"_"+number+".jpg");
         m_counter++;
         m_store_image = false;
         m_camera.orbit(m_camera.position(), glm::dvec2(m_camera.field_of_view(),0));
-
+        //sendImage(currentImage);
         if(m_counter >= 360/m_camera.field_of_view() || m_single_image_flag)
             QCoreApplication::quit();
         update_camera(m_camera);
