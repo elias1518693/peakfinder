@@ -343,9 +343,11 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
 
         QString number = QString::number(m_counter);
         QByteArray currentPositionImage = m_gbuffer->read_colour_attachment_to_array(1);
-        QTextStream out(stdout);
-        out << currentPositionImage.toHex();
 
+        if(!m_single_image_flag){
+            QTextStream out(stdout);
+            out << currentPositionImage.toHex();
+        }
         m_gbuffer->read_colour_attachment(0).save("rendered_images/"+m_file_name+"_"+number+".jpg");
         m_counter++;
         m_store_image = false;

@@ -46,8 +46,13 @@ def decode_byte_array(byte_array, width, height):
     return image_array
 def select_image():
     root = tk.Tk()
-    root.withdraw()
-    file_path = filedialog.askopenfilename(title="Select an image file")
+    root.attributes("-topmost", True)  # This makes the window appear on top
+    root.withdraw()  # Hide the root window
+
+    file_path = filedialog.askopenfilename(title="Select an image file", parent=root)
+
+    # Destroy the root window after selection
+    root.destroy()
     return file_path
     
 def change_extension_to_txt(file_path, base_name_replace):
@@ -259,26 +264,31 @@ def start_renderer(renderer_path, image_path, lat, long, alt, fov):
         width, height = scale_to_fit_screen(width, height, 960, 540)
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         orientation = f" 0 0 0"
-        cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {width} {height} {1}"
+        cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {width} {height} {0}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
         output = stdout.decode()
         error = stderr.decode()
 
-
-
+        position_images = []
         # Convert the line to a bytes object
         byte_data = bytes.fromhex(output.strip())
+        bytes_per_image = width * height * 4 * 4  # Modify this if your images are not 1 byte per pixel
 
-        # Decode the byte data to an image
-        byte_array = decode_byte_array(byte_data, width, height)
-        return byte_array
+        # Split byte_data into individual images
+        split_byte_data = [byte_data[i:i + bytes_per_image] for i in range(0, len(byte_data), bytes_per_image)]
+
+        for byte_array_str in split_byte_data:
+            # Assuming decode_byte_array is a defined function
+            image = decode_byte_array(byte_array_str, width, height)
+            position_images.append(image)
+        return position_images
 
 
     except Exception as e:
         print("Error:", str(e))
-        return -1
+        exit()
         
         
 def render_result(renderer_path, image_path, yaw, lat, long, alt, fov, pitch, roll):
@@ -436,29 +446,64 @@ def start_matching(image_path, fov, byte_array):
         matches =np.array([matches + allkeypoints.size/2,matches]).T
         print(f"matches: {matches.size}")
         allkeypoints = np.vstack((allkeypoints, mkpts0))
-
         inlier_points1 = mkpts1[np.where(inliers.ravel() == (1))[0]]
-        ws_array = np.zeros((inlier_points1.shape[0], 3))
+        ws_array1 = np.zeros((inlier_points1.shape[0], 3), dtype=np.float32)
         for idx, keypoint in enumerate(inlier_points1):
             # Convert keypoint coordinates to integers
             x_index = int(keypoint[0])
             y_index = int(keypoint[1])
 
             # Ensure that indices are within the array bounds
-            if 0 <= x_index < byte_array.shape[0] and 0 <= y_index < byte_array.shape[1]:
-                print(byte_array[x_index, y_index][:3])
-                ws_array[idx] = byte_array[x_index, y_index][:3]
-            else:
-                print(f'x index: {x_index}  y index: {y_index}')
-        # Define the distortion coefficients. Set this according to your camera's properties.
-        # If you don't have distortion coefficients, you can start with zeros.
-        dist_coeffs = np.zeros((4, 1))  # Modify if you have specific distortion coefficients
+            if 0 <= x_index < byte_array[i].shape[0] and 0 <= y_index < byte_array[i].shape[1]:
+                #print(byte_array[x_index, y_index][:3])
+                ws_array1[idx] = byte_array[i][x_index, y_index][:3]
 
+        dist_coeffs = np.zeros((4, 1))
         # SolvePnP returns the rotation and translation vectors
-        success, rotation_vector, translation_vector, pose_inliers = cv2.solvePnPRansac(ws_array,  mkpts1[np.where(inliers.ravel() == (1))[0]], camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
-        print(f'success: {success} \n rotation vector: {rotation_vector} \n translation vector: {translation_vector}')
+        success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(ws_array1, mkpts0[np.where(inliers.ravel() == (1))[0]], camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
+        success1, rotation_vector1, translation_vector1, pose_inliers1 = cv2.solvePnPRansac(ws_array1,  mkpts1[np.where(inliers.ravel() == (1))[0]], camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
+
+        print(f'success: {success0} \n rotation vector: {rotation_vector0} \n translation vector: {translation_vector0}')
+        print(f'success: {success1} \n rotation vector: {rotation_vector1} \n translation vector: {translation_vector1}')
+        if(not(success0 and success1)):
+            continue
+
+        R1, _ = cv2.Rodrigues(rotation_vector0)
+        R2, _ = cv2.Rodrigues(rotation_vector1)
+
+        T1 = np.hstack((R1, translation_vector0))
+        T2 = np.hstack((R2, translation_vector1))
+
+        # Convert to 4x4 transformation matrices
+        T1 = np.vstack((T1, [0, 0, 0, 1]))
+        T2 = np.vstack((T2, [0, 0, 0, 1]))
+
+        # Compute relative transformation
+        M = np.dot(T2, np.linalg.inv(T1))
+
+        # Extract relative rotation (R) and translation (T)
+        relative_rotation = M[:3, :3]
+        relative_translation = M[:3, 3]
+        yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(relative_rotation)
+        print( f'Relative rotation: {relative_rotation} \n relative translation: {relative_translation}')
+
+        objectPoints = np.array([ws_array1], dtype=np.float32)
+
+        # Ensure imagePoints0 and imagePoints1 are lists of arrays, one array for each image pair
+        # Convert them to np.float32 if not already
+        imagePoints0 = np.array([np.float32(mkpts0[np.where(inliers.ravel() == 1)[0]]) for _ in range(len(objectPoints))], dtype=np.float32)
+        imagePoints1 = np.array([np.float32(mkpts1[np.where(inliers.ravel() == 1)[0]]) for _ in range(len(objectPoints))], dtype=np.float32)
 
 
+        # Perform stereo calibration
+        #flags = (cv2.CALIB_FIX_ASPECT_RATIO + cv2.CALIB_ZERO_TANGENT_DIST +
+        #         cv2.CALIB_SAME_FOCAL_LENGTH)
+        #ret, K1, D1, K2, D2, R, T, E, F = cv2.stereoCalibrate(
+       #     objectPoints, imagePoints0, imagePoints1,
+       #     camera_matrix, dist_coeffs, camera_matrix, dist_coeffs,
+       #     img.size, flags
+       # )
+       # print(f"Stereo calibration rms: {ret}")
 
 
         F, F_innliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 1, 0.999999, 500000)
@@ -472,12 +517,8 @@ def start_matching(image_path, fov, byte_array):
         #theta = np.arctan2(H[1, 0], H[0, 0])
         #yaw = np.degrees(theta)  # Convert radians to degrees
         num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, camera_matrix)
-        pitch = 0
-        yaw = 0
-        roll = 0
-        for rotationmatrix in Rs:
-            yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(rotationmatrix)
-
+        #for rotationmatrix in Rs:
+            #yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(rotationmatrix)
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
             best_match_yaw = pitch
@@ -559,6 +600,6 @@ if __name__ == "__main__":
 
     yaw, pitch, roll = start_matching(image_path, fov, byte_array)
     
-    #render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
+    render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
     
     
