@@ -50,13 +50,14 @@ Controller::Controller(AbstractRenderWindow* render_window)
 
     m_terrain_service = std::make_unique<TileLoadService>("https://alpinemaps.cg.tuwien.ac.at/tiles/alpine_png/", TileLoadService::UrlPattern::ZXY, ".png");
     //    m_ortho_service.reset(new TileLoadService("https://tiles.bergfex.at/styles/bergfex-osm/", TileLoadService::UrlPattern::ZXY_yPointingSouth, ".jpeg"));
-    //    m_ortho_service.reset(new TileLoadService("https://alpinemaps.cg.tuwien.ac.at/tiles/ortho/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg"));
+        m_ortho_service.reset(new TileLoadService("https://alpinemaps.cg.tuwien.ac.at/tiles/ortho/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg"));
     //    m_ortho_service.reset(new TileLoadService(
     //        "https://maps%1.wien.gv.at/basemap/bmaporthofoto30cm/normal/google3857/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg", { "", "1", "2", "3", "4" }));
-    m_ortho_service.reset(new TileLoadService(
-        "https://gataki.cg.tuwien.ac.at/raw/basemap/tiles/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg"));
+    //m_ortho_service.reset(new TileLoadService(
+    //    "https://gataki.cg.tuwien.ac.at/raw/basemap/tiles/", TileLoadService::UrlPattern::ZYX_yPointingSouth, ".jpeg"));
 
     m_tile_scheduler = std::make_unique<nucleus::tile_scheduler::Scheduler>();
+    m_tile_scheduler->purge_ram_cache();
     m_tile_scheduler->read_disk_cache();
     m_tile_scheduler->set_gpu_quad_limit(500);
     m_tile_scheduler->set_ram_quad_limit(12000);
@@ -69,6 +70,7 @@ Controller::Controller(AbstractRenderWindow* render_window)
         m_tile_scheduler->set_aabb_decorator(decorator);
         m_render_window->set_aabb_decorator(decorator);
     }
+
     m_data_querier = std::make_unique<DataQuerier>(&m_tile_scheduler->ram_cache());
     m_camera_controller = std::make_unique<nucleus::camera::Controller>(
         nucleus::camera::PositionStorage::instance()->get("grossglockner"),

@@ -117,9 +117,12 @@ int main(int argc, char* argv[])
         double yaw =std::atof(argv[6]);
         double pitch = std::atof(argv[7]);
         double roll = std::atof(argv[8]);
-        float pixel_width = std::atof(argv[9]);
-        float pixel_height = std::atof(argv[10]);
-        bool render_single_image = std::atof(argv[11]);
+        float x = std::atof(argv[9]);
+        float y = std::atof(argv[10]);
+        float z = std::atof(argv[11]);
+        float pixel_width = std::atof(argv[12]);
+        float pixel_height = std::atof(argv[13]);
+        bool render_single_image = std::atof(argv[14]);
 
         glWindow.render_window()->setFileName(filename);
 
@@ -129,8 +132,8 @@ int main(int argc, char* argv[])
          glWindow.render_window()->render_single_image(render_single_image);
         controller.camera_controller()->set_near_plane(1.0f);
 
-
         controller.camera_controller()->set_latitude_longitude_altitude(lat, lon, alt);
+        controller.camera_controller()->move(glm::dvec3(x,y,z));
         controller.camera_controller()->refine_altitude();
         //float verticalFOV = glm::degrees(2.0f * atan(tan(glm::radians(std::atof(argv[5])) / 2.0f) * ((float)std::atof(argv[9])/(std::atof(argv[8])))));
         float verticalFOV = glm::degrees(2.0f * atan(tan(glm::radians(horizontal_fov_deg) / 2.0f) * (pixel_height/pixel_width)));

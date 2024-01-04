@@ -264,7 +264,8 @@ def start_renderer(renderer_path, image_path, lat, long, alt, fov):
         width, height = scale_to_fit_screen(width, height, 960, 540)
         file_name, file_extension = os.path.splitext(os.path.basename(image_path))
         orientation = f" 0 0 0"
-        cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {width} {height} {0}"
+        translation = f" 0 0 0"
+        cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {translation} {width} {height} {0}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
@@ -291,7 +292,7 @@ def start_renderer(renderer_path, image_path, lat, long, alt, fov):
         exit()
         
         
-def render_result(renderer_path, image_path, yaw, lat, long, alt, fov, pitch, roll):
+def render_result(renderer_path, image_path, yaw, lat, long, alt, fov, pitch, roll, x, y, z):
     try:
         img = Image.open(image_path)
         width, height = img.size  
@@ -302,8 +303,9 @@ def render_result(renderer_path, image_path, yaw, lat, long, alt, fov, pitch, ro
         processes = []  # List to store subprocess objects
 
         orientation = f" {yaw} {pitch} {roll}"
+        translation = f" {x} {y} {z}"
         new_file_name = f"{file_name}_result"
-        cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {width} {height} {1}"
+        cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {translation} {width} {height} {1}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         process.wait()        
@@ -412,6 +414,7 @@ def start_matching(image_path, fov, byte_array):
     best_roll = 0.0
     best_match_image_deg = 0
     best_match_h = None
+    best_x, best_y, best_z = 0,0,0
     allkeypoints = np.empty((0,2))
     device = torch.device('cuda')
     matcher = KF.LoFTR(pretrained='outdoor')
@@ -527,6 +530,9 @@ def start_matching(image_path, fov, byte_array):
             best_match_image_deg = i * fov_vert
             best_match_prob = match_prob
             best_match_h = H
+            best_x = relative_translation[0]
+            best_y = relative_translation[1]
+            best_z = relative_translation[2]
         
         
         fig = plt.figure()
@@ -573,7 +579,7 @@ def start_matching(image_path, fov, byte_array):
         # cv2.imshow("Overlay Image", overlay_image)  # If you want to display the image
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()  # Make sure to destroy all windows if you've used cv2.imshow
-    return best_match_yaw + best_match_image_deg, best_match_pitch, best_roll
+    return best_match_yaw + best_match_image_deg, best_match_pitch, best_roll, best_x, best_y, best_z
 
 if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_7_0_MinGW_64_bit-Release/plain_renderer')
@@ -598,8 +604,8 @@ if __name__ == "__main__":
     # Start the renderer with the specified parameters and select an image
     byte_array = start_renderer(renderer_path,  image_path, lat, long, height, fov)
 
-    yaw, pitch, roll = start_matching(image_path, fov, byte_array)
+    yaw, pitch, roll, x, y, z = start_matching(image_path, fov, byte_array)
     
-    render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll)
+    render_result(renderer_path, image_path, yaw, lat, long, height, fov, pitch, roll, x, y, z)
     
     
