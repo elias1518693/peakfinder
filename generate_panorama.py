@@ -462,6 +462,10 @@ def start_matching(image_path, fov, byte_array):
                 ws_array1[idx] = byte_array[i][x_index, y_index][:3]
 
         dist_coeffs = np.zeros((4, 1))
+
+        if(ws_array1.size < 4):
+            continue
+
         # SolvePnP returns the rotation and translation vectors
         success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(ws_array1, mkpts0[np.where(inliers.ravel() == (1))[0]], camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
         success1, rotation_vector1, translation_vector1, pose_inliers1 = cv2.solvePnPRansac(ws_array1,  mkpts1[np.where(inliers.ravel() == (1))[0]], camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
@@ -496,7 +500,6 @@ def start_matching(image_path, fov, byte_array):
         # Convert them to np.float32 if not already
         imagePoints0 = np.array([np.float32(mkpts0[np.where(inliers.ravel() == 1)[0]]) for _ in range(len(objectPoints))], dtype=np.float32)
         imagePoints1 = np.array([np.float32(mkpts1[np.where(inliers.ravel() == 1)[0]]) for _ in range(len(objectPoints))], dtype=np.float32)
-
 
         # Perform stereo calibration
         #flags = (cv2.CALIB_FIX_ASPECT_RATIO + cv2.CALIB_ZERO_TANGENT_DIST +
