@@ -175,28 +175,6 @@ void Window::resize_framebuffer(int width, int height)
 
     f->glViewport(0, 0, width, height);
 }
-void sendImage(QImage &image) {
-    QTcpSocket socket;
-    socket.connectToHost("127.0.0.1", 12345); // IP and port of the Python server
-
-    if (!socket.waitForConnected()) {
-        qDebug() << "Connection Failed!";
-        return;
-    }
-
-    QByteArray byteArray(reinterpret_cast<const char*>(image.constBits()), image.sizeInBytes());
-
-           // Sending the image size first
-    qint32 size = byteArray.size();
-    socket.write(reinterpret_cast<const char*>(&size), sizeof(size));
-    socket.waitForBytesWritten();
-
-           // Sending the image data
-    socket.write(byteArray);
-    socket.waitForBytesWritten();
-
-    socket.disconnectFromHost();
-}
 
 void Window::paint(QOpenGLFramebufferObject* framebuffer)
 {
@@ -352,7 +330,6 @@ void Window::paint(QOpenGLFramebufferObject* framebuffer)
         m_counter++;
         m_store_image = false;
         m_camera.orbit(m_camera.position(), glm::dvec2(m_camera.field_of_view(),0));
-        //sendImage(currentImage);
         if(m_counter >= 360/m_camera.field_of_view() || m_single_image_flag)
             QCoreApplication::quit();
         update_camera(m_camera);
