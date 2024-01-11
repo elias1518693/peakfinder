@@ -394,6 +394,26 @@ def calculate_camera_matrix(horizontal_fov, width, height):
                               [0, 0, 1]])
     print(f'camera matrix: {camera_matrix}')
     return camera_matrix
+
+def draw_matches(mkpts0, mkpts1, img1, img2, inliers, path):
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1)
+    draw_LAF_matches(
+        KF.laf_from_center_scale_ori(torch.from_numpy(mkpts0).view(1, -1, 2),
+                                     torch.ones(mkpts0.shape[0]).view(1, -1, 1, 1),
+                                     torch.ones(mkpts0.shape[0]).view(1, -1, 1)),
+        KF.laf_from_center_scale_ori(torch.from_numpy(mkpts1).view(1, -1, 2),
+                                     torch.ones(mkpts1.shape[0]).view(1, -1, 1, 1),
+                                     torch.ones(mkpts1.shape[0]).view(1, -1, 1)),
+        torch.arange(mkpts0.shape[0]).view(-1, 1).repeat(1, 2),
+        K.tensor_to_image(img1),
+        K.tensor_to_image(img2),
+        inliers,
+        draw_dict={'inlier_color': None,
+                   'tentative_color': None,
+                   'feature_color': (0.2, 0.5, 1), 'vertical': False},
+        ax=ax, )
+    plt.savefig(path)
 def rotation_matrix_to_pitch_yaw_roll(H):
     sy = np.sqrt(H[0,0] * H[0,0] +  H[1,0] * H[1,0])
     singular = sy < 1e-6
@@ -501,6 +521,7 @@ def start_matching(image_path, fov, byte_array):
 
         if(not(success0 and success1)):
             continue
+        draw_matches(mkpts0, mkpts1, img1, img2, inliers, matched_image_path)
         #plot_3d_points(ws_array1, -translation_vector0, -translation_vector1)
         all_points = byte_array[i][:,:,:3]
        # plot_3d_points(all_points, -translation_vector0, -translation_vector1)
@@ -544,20 +565,14 @@ def start_matching(image_path, fov, byte_array):
         #    camera_matrix, dist_coeffs, camera_matrix, dist_coeffs,
        #     [screenwidth, screenheight], flags)
       #  print(f"Stereo calibration rms: {ret}")
-
-
-        F, F_innliers = cv2.findFundamentalMat(mkpts0, mkpts1, cv2.USAC_MAGSAC, 1, 0.999999, 500000)
-        print(f'fundamental inliers: {np.where(F_innliers.ravel() == (1))[0].size}')
-        if H is None or inliers is None:
-            continue
         if(matches.size < 0):
             continue
         match_prob = ws_array1.size
-        #theta = np.arctan2(H[1, 0], H[0, 0])
-        #yaw = np.degrees(theta)  # Convert radians to degrees
+        # theta = np.arctan2(H[1, 0], H[0, 0])
+        # yaw = np.degrees(theta)  # Convert radians to degrees
         num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, camera_matrix)
-        #for rotationmatrix in Rs:
-            #yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(rotationmatrix)
+        # for rotationmatrix in Rs:
+        # yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(rotationmatrix)
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
             best_match_yaw = pitch
@@ -566,29 +581,10 @@ def start_matching(image_path, fov, byte_array):
             best_match_image_deg = i * fov_vert
             best_match_prob = match_prob
             best_match_h = H
-            best_x = translation_vector0[0]
-            best_y = translation_vector0[2]
-            best_z = -translation_vector0[1]
-        
-        
-        fig = plt.figure()
-        ax = fig.add_subplot(1, 1, 1)
-        draw_LAF_matches(
-        KF.laf_from_center_scale_ori(torch.from_numpy(mkpts0).view(1,-1, 2),
-                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1, 1),
-                                    torch.ones(mkpts0.shape[0]).view(1,-1, 1)),
-        KF.laf_from_center_scale_ori(torch.from_numpy(mkpts1).view(1,-1, 2),
-                                    torch.ones(mkpts1.shape[0]).view(1,-1, 1, 1),
-                                    torch.ones(mkpts1.shape[0]).view(1,-1, 1)),
-        torch.arange(mkpts0.shape[0]).view(-1,1).repeat(1,2),
-        K.tensor_to_image(img1),
-        K.tensor_to_image(img2),
-        pose_inliers0,
-        draw_dict={'inlier_color': None,
-                   'tentative_color': None, 
-                   'feature_color': (0.2, 0.5, 1), 'vertical': False},
-                   ax=ax,)
-        plt.savefig(matched_image_path)
+            #best_x = -translation_vector0[1][0]
+            #best_y = -translation_vector0[0][0]
+            #best_z = -translation_vector0[2][0]
+
 
     print(f"Best Match Image Path: {best_match_image_path}")
     print(f"Rotation Angle: {best_match_yaw} degrees")
