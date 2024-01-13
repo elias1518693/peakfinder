@@ -19,6 +19,47 @@ import json
 from database import *
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import torch
+import torch.optim as optim
+
+
+
+def project_points_opencv(points_3d, camera_params, image_size):
+
+
+    # Assuming no lens distortion
+    dist_coeffs = np.zeros(4)
+
+    # OpenCV's projectPoints expects rotation and translation vectors
+    rvec = np.zeros(3)
+    tvec = np.zeros(3)
+
+    # Convert points_3d to the correct shape and type if necessary
+    points_3d = np.asarray(points_3d, dtype=np.float64).reshape(-1, 1, 3)
+
+    # Project points
+    points_2d, _ = cv2.projectPoints(points_3d, rvec, tvec, camera_params, dist_coeffs)
+
+    # Reshape the output and return
+    return points_2d.reshape(-1, 2)
+
+def project_points(points_3d_tensor, camera_params_tensor, image_size):
+    """
+       Wrapper function to interface with PyTorch.
+       """
+    # Convert PyTorch tensors to numpy arrays
+    points_3d_np = points_3d_tensor.detach().cpu().numpy()
+    camera_params_np = camera_params_tensor.detach().cpu().numpy()
+
+    # Use OpenCV function for projection
+    points_2d_np = project_points_opencv(points_3d_np, camera_params_np, image_size)
+
+    # Convert back to PyTorch tensor
+    points_2d_tensor = torch.from_numpy(points_2d_np).type_as(points_3d_tensor)
+
+    return points_2d_tensor
+
+
 
 def plot_3d_points(points, special_point1, special_point2):
     fig = plt.figure()
@@ -392,7 +433,7 @@ def calculate_camera_matrix(horizontal_fov, width, height):
     camera_matrix = np.array([[fx, 0, cx],
                               [0, fy, cy],
                               [0, 0, 1]])
-    print(f'camera matrix: {camera_matrix}')
+    #print(f'camera matrix: {camera_matrix}')
     return camera_matrix
 
 def draw_matches(mkpts0, mkpts1, img1, img2, inliers, path):
@@ -581,6 +622,12 @@ def start_matching(image_path, fov, byte_array):
             best_match_image_deg = i * fov_vert
             best_match_prob = match_prob
             best_match_h = H
+            best_points1 = mkpts0
+            best_points2 = mkpts1
+            best_camera_matrix =camera_matrix
+            best_pos_array = ws_array1
+            best_rotation = R2
+            best_translation = translation_vector1
             #best_x = -translation_vector0[1][0]
             #best_y = -translation_vector0[0][0]
             #best_z = -translation_vector0[2][0]
@@ -608,6 +655,21 @@ def start_matching(image_path, fov, byte_array):
         # cv2.imshow("Overlay Image", overlay_image)  # If you want to display the image
         # cv2.waitKey(0)
         # cv2.destroyAllWindows()  # Make sure to destroy all windows if you've used cv2.imshow
+
+    min_error = cv2.projectPoints(best_pos_array, best_rotation, best_translation, camera_matrix, dist_coeffs)
+    for guessfov in np.arange(30, 120, 0.1):
+        # Project 3D points to 2D image points using the test_camera_matrix
+        test_camera_matrix = calculate_camera_matrix(guessfov, screenwidth, screenheight)
+        projected_points, _ = cv2.projectPoints(best_pos_array, best_rotation, best_translation, test_camera_matrix, dist_coeffs)
+
+        # Calculate reprojection error
+        reprojection_error = np.linalg.norm(best_points1 - projected_points.squeeze(), axis=1).mean()
+        print(f'error for {guessfov} is {reprojection_error}')
+        if(reprojection_error < min_error):
+            min_error = reprojection_error
+            best_fov = guessfov
+    print(best_fov)
+
     return best_match_yaw + best_match_image_deg, best_match_pitch, best_roll, best_x, best_y, best_z
 
 if __name__ == "__main__":
