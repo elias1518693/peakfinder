@@ -309,16 +309,16 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
                   "image1": K.color.rgb_to_grayscale(img2).to(device)}
     with torch.no_grad():
         correspondences = matcher(input_dict)
-    mkpts0 = correspondences['keypoints0'].cpu().numpy()
-    mkpts1 = correspondences['keypoints1'].cpu().numpy()
-    draw_matches(mkpts0,mkpts1, img1, img2, None, f'matches/{file_name}_refined.jpg')
-    inlier_points1 = mkpts1
+    mkpts_real = correspondences['keypoints0'].cpu().numpy()
+    mkpts_rendered = correspondences['keypoints1'].cpu().numpy()
+    draw_matches(mkpts_real,mkpts_rendered, img1, img2, None, f'matches/{file_name}_refined.jpg')
+    inlier_points1 = mkpts_rendered
     index_y = np.round(inlier_points1[:, 1]).astype(int)
     index_x = np.round(inlier_points1[:, 0]).astype(int)
 
     valid_indices = np.where(depth_image[index_y, index_x][:, :3].any(axis=1))
-    mkpts0 = mkpts0[valid_indices]
-    mkpts1 = mkpts1[valid_indices]
+    mkpts_real = mkpts_real[valid_indices]
+    mkpts1 = mkpts_rendered[valid_indices]
     ws_array1 = depth_image[index_y[valid_indices], index_x[valid_indices]][:, :3].astype(np.float32)
 
     dist_coeffs = np.zeros((4, 1))
@@ -326,7 +326,7 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
         return
     camera_matrix = calculate_camera_matrix(fov, width, height)
     # SolvePnP returns the rotation and translation vectors
-    success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(ws_array1, mkpts0,
+    success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(ws_array1, mkpts_real,
                                                                                         camera_matrix, distCoeffs=None,
                                                                                         flags=cv2.SOLVEPNP_ITERATIVE,
                                                                                         confidence=0.999999,
@@ -346,31 +346,16 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
     print(
         f'success: {success1} \n rotation vector: {rotation_vector1} \n  translation vector: {translation_vector1} \n')
     rotation_matrix_to_pitch_yaw_roll(R2)
-    adjusted_translation1 = -np.matrix(R1).T * np.matrix(translation_vector0)
-    adjusted_translation2 = -np.matrix(R2).T * np.matrix(translation_vector1)
-    T1 = np.hstack((R1, adjusted_translation1))
-    T2 = np.hstack((R2, adjusted_translation2))
-    # Convert to 4x4 transformation matrices
-    T1 = np.vstack((T1, [0, 0, 0, 1]))
-    T2 = np.vstack((T2, [0, 0, 0, 1]))
-
-    # Compute relative transformation
-    M = np.dot(T2, np.linalg.inv(T1))
-
-    # Extract relative rotation (R) and translation (T)
-    relative_rotation = M[:3, :3]
-    relative_translation = M[:3, 3]
-    rotation_matrix_to_pitch_yaw_roll(relative_rotation)
-    print(f'Relative rotation: {relative_rotation} \n relative translation: {relative_translation}')
+    calculate_relative_transformation(R1, R2, translation_vector0, translation_vector1)
     ws_array1 = ws_array1[pose_inliers0]
-    mkpts0 = mkpts0[pose_inliers0]
-    rotation_vector0, translation_vector0 = cv2.solvePnPRefineLM(ws_array1, mkpts0, camera_matrix, None, rotation_vector0, translation_vector0)
+    mkpts_real = mkpts_real[pose_inliers0]
+    rotation_vector0, translation_vector0 = cv2.solvePnPRefineLM(ws_array1, mkpts_real, camera_matrix, None, rotation_vector0, translation_vector0)
     print(
         f'success: {success0} \n rotation vector: {rotation_vector0} \n  translation vector: {translation_vector0} \n')
     R1, _ = cv2.Rodrigues(rotation_vector0)
     rotation_matrix_to_pitch_yaw_roll(R1)
     if(optimize):
-        optimized_fov = optimize_fov(mkpts0, ws_array1, rotation_vector0, translation_vector0, width, height, dist_coeffs, fov)
+        optimized_fov = optimize_fov(mkpts_real, ws_array1, rotation_vector0, translation_vector0, width, height, dist_coeffs, fov)
         print(f'Optimized FoV: {optimized_fov}')
         render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, optimized_fov, pitch, roll, False)
 
@@ -550,6 +535,7 @@ if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_7_0_MinGW_64_bit-Release/plain_renderer')
     # Path to plain_renderer.exe
     renderer_path = "plain_renderer.exe "
+    camera_path = ""
     image_path = select_image()
     if os.path.exists("testdatabase.db"):
         os.remove("testdatabase.db")
