@@ -1,21 +1,18 @@
-import subprocess
 import tkinter as tk
 import exifread
-import os
-import socket
 from tkinter import filedialog
 import math
-import cv2
 import numpy as np
 import kornia.feature as KF
 import kornia as K
 from kornia_moons.feature import *
 from PIL import Image
-from database import *
 import matplotlib.pyplot as plt
 import torch
 from scipy.optimize import minimize
-
+import os
+import subprocess
+import cv2
 
 def plot_3d_points(points, special_point1, special_point2):
     fig = plt.figure()
@@ -142,14 +139,11 @@ def scale_while_keeping_aspect(image_width, image_height, screen_width, screen_h
     else:
         scaled_height = screen_height
         scaled_width = scaled_height * image_aspect_ratio
-
     scaled_width = min(screen_width, int(scaled_width))
     scaled_height = min(screen_height, int(scaled_height))
-
     # Adjust dimensions to be divisible by 8 because loftr works better
     scaled_width = scaled_width - scaled_width % 8
     scaled_height = scaled_height - scaled_height % 8
-
     return scaled_width, scaled_height
 
 def dms_to_dd(dms):
@@ -240,119 +234,71 @@ def readExif(file_path):
             return latitude_dd, longitude_dd, height_dd, fov
 
 
-def start_renderer(renderer_path, image_path, width, height, lat, long, alt, fov):
-    try:
-        horizontal_fov_rad = math.radians(fov)
-        fov_vert = math.degrees(2.0 * math.atan(math.tan(math.radians(fov) / 2.0) * height / width))
-        vertical_fov_rad = 2.0 * math.atan(math.tan(horizontal_fov_rad / 2.0) * height / width)
-
-        fx = width / (2.0 * math.tan(horizontal_fov_rad / 2.0))
-        fy = height / (2.0 * math.tan(vertical_fov_rad / 2.0))
-        cx = width / 2.0
-        cy = height / 2.0
-        print(f'horizontal fov: {fov} vertical fov: {fov_vert}')
-        file_name, file_extension = os.path.splitext(os.path.basename(image_path))
-        orientation = f"0 0 0"
-        translation = f"{fx} {fy} {cx} {cy}"
-        cmd = f"{renderer_path} {file_name} {lat} {long} {alt} {fov} {orientation} {translation} {width} {height} {0}"
-        print("Running:", cmd)
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = process.communicate()
-        output = stdout.decode()
-        error = stderr.decode()
-
-        position_images = []
-        # Convert the line to a bytes object
-        byte_data = bytes.fromhex(output.strip())
-        bytes_per_image = width * height * 4 * 4
-
-        # Split byte_data into individual images
-        split_byte_data = [byte_data[i:i + bytes_per_image] for i in range(0, len(byte_data), bytes_per_image)]
-
-        for i, byte_array_str in enumerate(split_byte_data):
-            # Assuming decode_byte_array is a defined function
-            image = decode_byte_array(byte_array_str, width, height)
-            color_img = cv2.imread(f"rendered_images/{file_name}_{i}.jpg")
-            color_img_rgb = cv2.cvtColor(color_img, cv2.COLOR_BGR2RGB)
-            colors = color_img_rgb.reshape(-1, 3) / 255.0
-            #plot_3d_color(image.reshape((height * width, 4)[:3]), colors)
-            position_images.append(image)
-
-        return position_images
 
 
-    except Exception as e:
-        print("Error:", str(e))
-        exit()
+def render_360_degrees(renderer_path, image_path, image_width, image_height, latitude, longitude, altitude, field_of_view):
+    base_file_name, file_extension = os.path.splitext(os.path.basename(image_path))
+    rendered_images = []
+    byte_data = start_plain_renderer(renderer_path, base_file_name, latitude, longitude, altitude, field_of_view, 0, 0, 0, width, height, 0)
+    bytes_per_image = image_width * image_height * 4 * 4
+    # Split the byte data into individual images
+    for i in range(0, len(byte_data), bytes_per_image):
+        image_data = byte_data[i:i + bytes_per_image]
+        decoded_image = decode_byte_array(image_data, image_width, image_height)  # Assuming this function is defined
+        rendered_images.append(decoded_image)
+    return rendered_images
 
 
-def calculate_reprojection_error_with_ransac(fov, mkpts0, ws_array1, width, height, dist_coeffs):
+
+def calculate_reprojection_error(fov, mkpts0, ws_array1, width, height, dist_coeffs):
     camera_matrix = calculate_camera_matrix(fov, width, height)
 
-    # Dummy rotation and translation vectors for RANSAC
     rvec = np.array([[0], [0], [0]], dtype=float)
     tvec = np.array([[0], [0], [0]], dtype=float)
-
-    # Use RANSAC to find inliers
     _, rvec, tvec, inliers = cv2.solvePnPRansac(ws_array1, mkpts0, camera_matrix, dist_coeffs, rvec, tvec,
                                                 useExtrinsicGuess=True, iterationsCount=1000, reprojectionError=1.0,
-                                                confidence=0.99, flags=cv2.SOLVEPNP_ITERATIVE)
+                                                confidence=0.9999, flags=cv2.SOLVEPNP_ITERATIVE)
 
     if inliers is not None:
-        inlier_keypoints = mkpts0[inliers[:, 0], :]
-        inlier_3d_points = ws_array1[inliers[:, 0], :]
-
-        # Project inlier 3D points using the optimized rotation and translation vectors
+        inlier_keypoints = mkpts0[inliers].squeeze()
+        inlier_3d_points = ws_array1[inliers].squeeze()
         projected_points, _ = cv2.projectPoints(inlier_3d_points, rvec, tvec, camera_matrix, dist_coeffs)
-
-        # Calculate mean squared reprojection error for inliers
         error = np.mean(np.linalg.norm(inlier_keypoints - projected_points.squeeze(), axis=1) ** 2)
     else:
-        # In case no inliers are found, set a high error
         error = np.inf
-
     return error
-def calculate_reprojection_error(fov, mkpts0, ws_array1, rotation_vector, translation_vector, width, height, dist_coeffs):
-    camera_matrix = calculate_camera_matrix(fov, width, height)
-    projected_points, _ = cv2.projectPoints(ws_array1, rotation_vector, translation_vector, camera_matrix, dist_coeffs)
-    error = np.mean(np.linalg.norm(mkpts0 - projected_points.squeeze(), axis=1)**2)
-    return error
-
 def optimize_fov(mkpts0, ws_array1, rotation_vector0, translation_vector0, width, height, dist_coeffs, initial_guess=90):
-    result = minimize(calculate_reprojection_error_with_ransac, x0=initial_guess, args=(mkpts0, ws_array1, width, height, dist_coeffs), method='Nelder-Mead')
+    result = minimize(calculate_reprojection_error, x0=initial_guess, args=(mkpts0, ws_array1, width, height, dist_coeffs), method='Nelder-Mead')
     optimized_fov = result.x[0]
     return optimized_fov
-        
-def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, fov, pitch, roll, optimize = True):
-    try:
-        horizontal_fov_rad = math.radians(fov)
-        vertical_fov_rad = 2.0 * math.atan(math.tan(horizontal_fov_rad / 2.0) * height / width)
 
-        fx = width / (2.0 * math.tan(horizontal_fov_rad / 2.0))
-        fy = height / (2.0 * math.tan(vertical_fov_rad / 2.0))
-        cx = width / 2.0
-        cy = height / 2.0
-        parameters = f" {lat} {long} {alt} {fov}"
-        file_name, file_extension = os.path.splitext(os.path.basename(image_path))
+
+def start_plain_renderer(renderer_path, filename, lat, long, alt, fov, yaw, pitch, roll ,width, height, panorama):
+    try:
+        fx, fy, cx, cy = calculate_camera_parameters(fov, width, height)
+        parameters = f"{lat} {long} {alt} {fov}"
         orientation = f"{yaw} {pitch} {roll}"
         translation = f"{fx} {fy} {cx} {cy}"
-        if(optimize):
-            new_file_name = f"{file_name}_result"
-        else:
-            new_file_name = f"{file_name}_result_optimized"
-        cmd = f"{renderer_path} {new_file_name} {parameters} {orientation} {translation} {width} {height} {1}"
+        cmd = f"{renderer_path} {filename} {parameters} {orientation} {translation} {width} {height} {panorama}"
         print("Running:", cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         stdout, stderr = process.communicate()
         output = stdout.decode()
         error = stderr.decode()
         byte_data = bytes.fromhex(output.strip())
-        depth_image = decode_byte_array(byte_data, width, height, True)
-
+        return byte_data
     except Exception as e:
         print("Error:", str(e))
         return -1
 
+def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, fov, pitch, roll, optimize = True):
+    file_name, file_extension = os.path.splitext(os.path.basename(image_path))
+    if (optimize):
+        new_file_name = f"{file_name}_result"
+    else:
+        new_file_name = f"{file_name}_result_optimized"
+    byte_data = start_plain_renderer(renderer_path, new_file_name, lat, long, alt, fov, yaw, pitch, roll, width, height, 1)
+    depth_image = decode_byte_array(byte_data, width, height, False)
     device = torch.device('cuda')
     matcher = KF.LoFTR(pretrained='outdoor')
     matcher = matcher.to(device).eval()
@@ -378,7 +324,6 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
     dist_coeffs = np.zeros((4, 1))
     if (ws_array1.shape[0] < 4):
         return
-    plot_3d_points(ws_array1, [0,0,0],[0,0,0] )
     camera_matrix = calculate_camera_matrix(fov, width, height)
     # SolvePnP returns the rotation and translation vectors
     success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(ws_array1, mkpts0,
@@ -417,14 +362,9 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
     relative_translation = M[:3, 3]
     rotation_matrix_to_pitch_yaw_roll(relative_rotation)
     print(f'Relative rotation: {relative_rotation} \n relative translation: {relative_translation}')
-
-
-
-
-    #ws_array1 = ws_array1[pose_inliers0]
-    #mkpts0 = mkpts0[pose_inliers0]
-    #mkpts1 = mkpts1[pose_inliers0]
-    #rotation_vector0, translation_vector0 = cv2.solvePnPRefineLM(ws_array1, mkpts0, camera_matrix, None, rotation_vector0, np.array([0.0,0.0,0.0]).T)
+    ws_array1 = ws_array1[pose_inliers0]
+    mkpts0 = mkpts0[pose_inliers0]
+    rotation_vector0, translation_vector0 = cv2.solvePnPRefineLM(ws_array1, mkpts0, camera_matrix, None, rotation_vector0, translation_vector0)
     print(
         f'success: {success0} \n rotation vector: {rotation_vector0} \n  translation vector: {translation_vector0} \n')
     R1, _ = cv2.Rodrigues(rotation_vector0)
@@ -434,29 +374,26 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
         print(f'Optimized FoV: {optimized_fov}')
         render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, optimized_fov, pitch, roll, False)
 
-def calculate_camera_matrix(horizontal_fov, width, height):
-    horizontal_fov_rad = math.radians(horizontal_fov)
+def calculate_camera_matrix(horizontal_fov_deg, width, height):
+    horizontal_fov_rad = math.radians(horizontal_fov_deg)
     vertical_fov_rad = 2.0 * math.atan(math.tan(horizontal_fov_rad / 2.0) * height / width)
-
     fx = width / (2.0 * math.tan(horizontal_fov_rad / 2.0))
     fy = height / (2.0 * math.tan(vertical_fov_rad / 2.0))
     cx = width / 2.0
     cy = height / 2.0
-
     camera_matrix = np.array([[fx, 0, cx],
                               [0, fy, cy],
                               [0, 0, 1]])
-    near = 1.0
-    far = 1000.0
-    opengl_mtx = np.array([
-        [2 * fx / width, 0.0, (width - 2 * cx) / width, 0.0],
-        [0.0, -2 * fy / height, (height - 2 * cy) / height, 0.0],
-        [0.0, 0.0, (-far - near) / (far - near), -2.0 * far * near / (far - near)],
-        [0.0, 0.0, -1.0, 0.0]
-    ])
-    #print(f'camera matrix: {camera_matrix}')
-    #print(f'opengl matrix: {opengl_mtx}')
     return camera_matrix
+
+def calculate_camera_parameters(horizontal_fov_deg, width, height):
+    horizontal_fov_rad = math.radians(horizontal_fov_deg)
+    vertical_fov_rad = 2.0 * math.atan(math.tan(horizontal_fov_rad / 2.0) * height / width)
+    fx = width / (2.0 * math.tan(horizontal_fov_rad / 2.0))
+    fy = height / (2.0 * math.tan(vertical_fov_rad / 2.0))
+    cx = width / 2.0
+    cy = height / 2.0
+    return fx, fy, cx, cy
 
 def draw_matches(mkpts0, mkpts1, img1, img2, inliers, path):
     fig = plt.figure()
@@ -488,20 +425,38 @@ def rotation_matrix_to_pitch_yaw_roll(H):
         x = np.arctan2(-H[1,2], H[1,1])
         y = np.arctan2(-H[2,0], sy)
         z = 0
-
     roll = np.degrees(x)
     pitch = np.degrees(y)
     yaw = np.degrees(z)
     print(f"yaw:{yaw} pitch:{pitch} roll:{roll} ")
     return yaw, pitch, roll
 
-def rot_params_rv(rvecs):
-    R = cv2.Rodrigues(rvecs)[0]
-    roll = 180*math.atan2(-R[2][1], R[2][2])/math.pi
-    pitch = 180*math.asin(R[2][0])/math.pi
-    yaw = 180*math.atan2(-R[1][0], R[0][0])/math.pi
-    print(f"yaw:{yaw} pitch:{pitch} roll:{roll} ")
-    return pitch, yaw, roll
+def calculate_relative_transformation(R1, R2, adjusted_translation1, adjusted_translation2 ):
+    T1 = np.hstack((R1, adjusted_translation1))
+    T2 = np.hstack((R2, adjusted_translation2))
+    # Convert to 4x4 transformation matrices
+    T1 = np.vstack((T1, [0, 0, 0, 1]))
+    T2 = np.vstack((T2, [0, 0, 0, 1]))
+    # Compute relative transformation
+    M = np.dot(T2, np.linalg.inv(T1))
+    # Extract relative rotation (R) and translation (T)
+    relative_rotation = M[:3, :3]
+    relative_translation = M[:3, 3]
+    yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(relative_rotation)
+    print(f'Relative rotation: {relative_rotation} \n relative translation: {relative_translation}')
+    return yaw, pitch, roll
+def warp_image(file_name,scaled_image, rendered_image, H, width, height):
+
+    # Apply the warpPerspective function with the correct parameters
+    warped_image = cv2.warpPerspective(rendered_image, H, (width, height), flags=cv2.WARP_INVERSE_MAP)
+
+    # Overlay the warped image onto the original image
+    # You can adjust the alpha value to make the overlay transparent
+    alpha = 0.5
+    overlay_image = cv2.addWeighted(scaled_image, 1 - alpha, warped_image, alpha, 0)
+
+    overlay_image_path = f"overlay_{file_name}.png"
+    cv2.imwrite(overlay_image_path, overlay_image)
 
 def start_matching(image_path, screenwidth, screenheight, fov, byte_array):
     fov_vert = math.degrees(2.0 * math.atan(math.tan(math.radians(fov) / 2.0) * screenheight / screenwidth))
@@ -518,115 +473,62 @@ def start_matching(image_path, screenwidth, screenheight, fov, byte_array):
     best_match_pitch = 0.0
     best_roll = 0.0
     best_match_image_deg = 0
-    best_match_h = None
     best_x, best_y, best_z = 0,0,0
 
     device = torch.device('cuda')
     matcher = KF.LoFTR(pretrained='outdoor')
     matcher = matcher.to(device).eval()
-
+    input_image = load_torch_image(scaled_image_path, target_size)
     if not os.path.exists('./matches'):
         os.makedirs('matches')
     for i in range(int(360/fov_vert)):
         print(f'matching image {i} with {fov_vert * i} degrees:')
         new_image_path = f"rendered_images/{file_name}_{i}.jpg"
         matched_image_path = f"matches/{file_name}_{i}_matched.jpg"
-
-        img1 = load_torch_image(scaled_image_path, target_size)
-        img2 = load_torch_image(new_image_path, target_size)
-        input_dict = {"image0": K.color.rgb_to_grayscale(img1).to(device), # LofTR works on grayscale images only
-                      "image1": K.color.rgb_to_grayscale(img2).to(device)}
+        rendered_image = load_torch_image(new_image_path, target_size)
+        input_dict = {"image0": K.color.rgb_to_grayscale(input_image).to(device), # LofTR works on grayscale images only
+                      "image1": K.color.rgb_to_grayscale(rendered_image).to(device)}
         with torch.no_grad():
             correspondences = matcher(input_dict)
-        mkpts0 = correspondences['keypoints0'].cpu().numpy()
-        mkpts1 = correspondences['keypoints1'].cpu().numpy()
+        mkpts_real = correspondences['keypoints0'].cpu().numpy()
+        mkpts_rendered = correspondences['keypoints1'].cpu().numpy()
 
-        if mkpts0.shape[0] < 10 or mkpts1.shape[0] < 10:
+        if mkpts_real.shape[0] < 10 or mkpts_rendered.shape[0] < 10:
             continue
-
-        H, inliers = cv2.findHomography(mkpts0, mkpts1, cv2.USAC_MAGSAC, 1, 0.999999, 500000)
-        if H is None:
-            continue
-
-        matches = np.where(inliers.ravel() == (1))[0]
-        print(f"matches: {matches.size}")
-        inlier_points1 = mkpts1
-        index_y = np.round(inlier_points1[:, 1]).astype(int)
-        index_x = np.round(inlier_points1[:, 0]).astype(int)
+        print(f"matches: {mkpts_rendered.shape[0]}")
+        index_y = np.round(mkpts_rendered[:, 1]).astype(int)
+        index_x = np.round(mkpts_rendered[:, 0]).astype(int)
 
         valid_indices = np.where(byte_array[i][index_y, index_x][:, :3].any(axis=1))
-        mkpts0 = mkpts0[valid_indices]
-        mkpts1 = mkpts1[valid_indices]
+        mkpts_real = mkpts_real[valid_indices]
+        mkpts_rendered = mkpts_rendered[valid_indices]
         ws_array1 = byte_array[i][index_y[valid_indices], index_x[valid_indices]][:, :3].astype(np.float32)
 
-
-        dist_coeffs = np.zeros((4, 1))
         if(ws_array1.shape[0] < 4):
             continue
 
         # SolvePnP returns the rotation and translation vectors
-        success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(ws_array1, mkpts0, camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
-        success1, rotation_vector1, translation_vector1, pose_inliers1 = cv2.solvePnPRansac(ws_array1,  mkpts1, camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
-        #E, mask = cv2.findEssentialMat(mkpts0, mkpts1)
-
-        #rotation_vector1 = np.array([[0.0],[0.0],[0.0]])
-        #translation_vector1 = np.array([[0.0],[0.0],[0.0]])
-
+        success0, rotation_vector_real, translation_vector_real, pose_inliers_real = cv2.solvePnPRansac(ws_array1, mkpts_real, camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
+        success1, rotation_vector_rendered, translation_vector_rendered, pose_inliers_rendered = cv2.solvePnPRansac(ws_array1,  mkpts_rendered, camera_matrix, distCoeffs=None, flags=cv2.SOLVEPNP_ITERATIVE, confidence=0.9999, reprojectionError=1)
 
         if(not(success0 and success1)):
             continue
-        draw_matches(mkpts0, mkpts1, img1, img2, inliers, matched_image_path)
-        #plot_3d_points(ws_array1, -translation_vector0, -translation_vector1)
-        all_points = byte_array[i][:,:,:3]
-       # plot_3d_points(all_points, -translation_vector0, -translation_vector1)
-        R1, _ = cv2.Rodrigues(rotation_vector0)
-        R2, _ = cv2.Rodrigues(rotation_vector1)
-        adjusted_translation1 = -np.matrix(R1).T * np.matrix(translation_vector0)
-        adjusted_translation2 = -np.matrix(R2).T * np.matrix(translation_vector1)
+        #draw_matches(mkpts_real, mkpts_rendered, input_image, rendered_image, None, matched_image_path)
+
+        R_real, _ = cv2.Rodrigues(rotation_vector_real)
+        R_rendered, _ = cv2.Rodrigues(rotation_vector_rendered)
+
         print(
-            f'success: {success0} \n rotation vector: {rotation_vector0} \n  translation vector: {translation_vector0} \n translation vector with R: {adjusted_translation1}')
+            f'success real image: {success0} \n rotation vector: {rotation_vector_real} \n  translation vector: {translation_vector_real} \n translation vector with R: {translation_vector_real}')
         print(
-            f'success: {success1} \n rotation vector: {rotation_vector1} \n translation vector: {translation_vector1} \n translation vector with R: {adjusted_translation2} This one should be 0')
-        rotation_matrix_to_pitch_yaw_roll(R1)
-        rotation_matrix_to_pitch_yaw_roll(R2)
-        T1 = np.hstack((R1, adjusted_translation1))
-        T2 = np.hstack((R2, adjusted_translation2))
+            f'success rendered image: {success1} \n rotation vector: {rotation_vector_rendered} \n translation vector: {translation_vector_rendered} \n translation vector with R: {translation_vector_rendered} This one should be 0')
+        rotation_matrix_to_pitch_yaw_roll(R_real)
+        rotation_matrix_to_pitch_yaw_roll(R_rendered)
 
-        # Convert to 4x4 transformation matrices
-        T1 = np.vstack((T1, [0, 0, 0, 1]))
-        T2 = np.vstack((T2, [0, 0, 0, 1]))
+        yaw, pitch, roll = calculate_relative_transformation(R_real, R_rendered, translation_vector_real, translation_vector_rendered)
 
-        # Compute relative transformation
-        M = np.dot(T2, np.linalg.inv(T1))
-
-        # Extract relative rotation (R) and translation (T)
-        relative_rotation = M[:3, :3]
-        relative_translation = M[:3, 3]
-        yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(relative_rotation)
-        print( f'Relative rotation: {relative_rotation} \n relative translation: {relative_translation}')
-
-        objectPoints = np.array([ws_array1], dtype=np.float32)
-
-        # Ensure imagePoints0 and imagePoints1 are lists of arrays, one array for each image pair
-        # Convert them to np.float32 if not already
-        imagePoints0 = np.array([np.float32(mkpts0) for _ in range(len(objectPoints))], dtype=np.float32)
-        imagePoints1 = np.array([np.float32(mkpts1) for _ in range(len(objectPoints))], dtype=np.float32)
-
-        # Perform stereo calibration
-       # flags = (cv2.CALIB_FIX_ASPECT_RATIO | cv2.CALIB_ZERO_TANGENT_DIST | cv2.CALIB_USE_INTRINSIC_GUESS)
-      #  ret, K1, D1, K2, D2, R, T, Ess, F = cv2.stereoCalibrate(
-       #     objectPoints, imagePoints0, imagePoints1,
-        #    camera_matrix, dist_coeffs, camera_matrix, dist_coeffs,
-       #     [screenwidth, screenheight], flags)
-      #  print(f"Stereo calibration rms: {ret}")
-        if(matches.size < 0):
-            continue
-        match_prob = ws_array1.size
-        # theta = np.arctan2(H[1, 0], H[0, 0])
-        # yaw = np.degrees(theta)  # Convert radians to degrees
-        num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, camera_matrix)
-        # for rotationmatrix in Rs:
-        # yaw, pitch, roll = rotation_matrix_to_pitch_yaw_roll(rotationmatrix)
+        match_prob = calculate_reprojection_error(fov, mkpts_real, ws_array1, width, height, None)
+        print(f"Reprojection error: {match_prob}")
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
             best_match_yaw = pitch
@@ -634,14 +536,7 @@ def start_matching(image_path, screenwidth, screenheight, fov, byte_array):
             best_roll = yaw
             best_match_image_deg = i * fov_vert
             best_match_prob = match_prob
-            best_match_h = H
             best_match_i = i
-            best_points1 = mkpts0
-            best_points2 = mkpts1
-            best_camera_matrix =camera_matrix
-            best_pos_array = ws_array1
-            best_rotation = R2
-            best_translation = translation_vector1
             #best_x = -translation_vector0[1][0]
             #best_y = -translation_vector0[0][0]
             #best_z = -translation_vector0[2][0]
@@ -649,27 +544,6 @@ def start_matching(image_path, screenwidth, screenheight, fov, byte_array):
 
     print(f"Best Match Image Path: {best_match_image_path}")
     print(f"Rotation Angle: {best_match_yaw} degrees")
-    if best_match_h is not None:
-        # Load the best match image
-        best_match_image = cv2.imread(best_match_image_path)
-
-        # Assuming the original image is not grayscale because we're going to overlay it
-        h, w = scaled_image.shape[:2]
-        # Apply the warpPerspective function with the correct parameters
-        warped_image = cv2.warpPerspective(best_match_image, best_match_h, (w, h), flags = cv2.WARP_INVERSE_MAP)
-
-        # Overlay the warped image onto the original image
-        # You can adjust the alpha value to make the overlay transparent
-        alpha = 0.5
-        overlay_image = cv2.addWeighted(scaled_image, 1 - alpha, warped_image, alpha, 0)
-
-        # Save or show the overlay image
-        overlay_image_path = f"overlay_{file_name}.png"
-        cv2.imwrite(overlay_image_path, overlay_image)  # Saving the overlay image
-        # cv2.imshow("Overlay Image", overlay_image)  # If you want to display the image
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()  # Make sure to destroy all windows if you've used cv2.imshow
-
     return best_match_yaw + best_match_image_deg, best_match_pitch, best_roll, best_x, best_y, best_z, byte_array[best_match_i]
 
 if __name__ == "__main__":
@@ -699,7 +573,7 @@ if __name__ == "__main__":
     # Start the renderer with the specified parameters and select an image
     print(f'calculated fov: {fov}')
 
-    byte_array = start_renderer(renderer_path,  image_path, width, height, lat, long, height, fov)
+    byte_array = render_360_degrees(renderer_path,  image_path, width, height, lat, long, height, fov)
 
     yaw, pitch, roll, x, y, z, best_array = start_matching(image_path, width, height, fov, byte_array)
     
