@@ -63,6 +63,7 @@ public slots:
     void orbit(const glm::dvec3& centre, const glm::dvec2& degrees);
     void roll(const double& degree);
     void set_view_direction(const glm::dvec2& degrees);
+    void set_projection_matrix(const glm::mat4& projectionMatrix);
     void update() const;
 
     void mouse_press(const event_parameter::Mouse&);

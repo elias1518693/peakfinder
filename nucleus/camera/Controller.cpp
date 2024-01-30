@@ -144,6 +144,11 @@ void Controller::set_view_direction(const glm::dvec2& degrees){
     update();
 }
 
+void Controller::set_projection_matrix(const glm::mat4& projectionMatrix){
+    m_definition.set_projection_matrix(projectionMatrix);
+    update();
+}
+
 void Controller::update() const
 {
     qDebug()<<"camera def changed";

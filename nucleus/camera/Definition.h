@@ -55,6 +55,7 @@ public:
     [[nodiscard]] std::array<geometry::Plane<double>, 6> clipping_planes() const;
     [[nodiscard]] std::vector<geometry::Plane<double>> four_clipping_planes() const;
     void set_perspective_params(float fov_degrees, const glm::uvec2& viewport_size, float near_plane);
+    void set_projection_matrix(glm::mat4 projection_matrix);
     void set_near_plane(float near_plane);
     [[nodiscard]] float near_plane() const;
     void pan(const glm::dvec2& v);

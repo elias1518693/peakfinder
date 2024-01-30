@@ -117,12 +117,13 @@ int main(int argc, char* argv[])
         double yaw =std::atof(argv[6]);
         double pitch = std::atof(argv[7]);
         double roll = std::atof(argv[8]);
-        float x = std::atof(argv[9]);
-        float y = std::atof(argv[10]);
-        float z = std::atof(argv[11]);
-        float pixel_width = std::atof(argv[12]);
-        float pixel_height = std::atof(argv[13]);
-        bool render_single_image = std::atof(argv[14]);
+        float fx = std::atof(argv[9]);
+        float fy = std::atof(argv[10]);
+        float px = std::atof(argv[11]);
+        float py = std::atof(argv[12]);
+        float pixel_width = std::atof(argv[13]);
+        float pixel_height = std::atof(argv[14]);
+        bool render_single_image = std::atof(argv[15]);
 
         glWindow.render_window()->setFileName(filename);
 
@@ -133,17 +134,25 @@ int main(int argc, char* argv[])
         controller.camera_controller()->set_near_plane(1.0f);
 
         controller.camera_controller()->set_latitude_longitude_altitude(lat, lon, alt);
-        controller.camera_controller()->move(glm::dvec3(x,y,z));
+
         controller.camera_controller()->refine_altitude();
         //float verticalFOV = glm::degrees(2.0f * atan(tan(glm::radians(std::atof(argv[5])) / 2.0f) * ((float)std::atof(argv[9])/(std::atof(argv[8])))));
         float verticalFOV = glm::degrees(2.0f * atan(tan(glm::radians(horizontal_fov_deg) / 2.0f) * (pixel_height/pixel_width)));
         qDebug()<<verticalFOV;
         controller.camera_controller()->set_field_of_view(verticalFOV);
+        float nearplane = 1.0f;
+        float farplane = 1'000'000.0f;
+
+        glm::dmat4 opengl_mtx = glm::mat4(
+            2 * fx / pixel_width, 0.0f, 0.0f, 0.0f,
+            0.0f, 2 * fy / pixel_height, 0.0f, 0.0f,
+            (pixel_width - 2 * px) / pixel_width, (pixel_height - 2 * py) / pixel_height, (-farplane - nearplane) / (farplane - nearplane), -1.0f,
+            0.0f, 0.0f, -2.0f * farplane * nearplane / (farplane - nearplane), 0.0f
+            );
 
         controller.camera_controller()->set_view_direction(glm::dvec2(yaw, pitch));
         controller.camera_controller()->roll(roll);
-
-
+        controller.camera_controller()->set_projection_matrix(opengl_mtx);
         glWindow.setFlag(Qt::FramelessWindowHint);
         glWindow.resize(pixel_width,pixel_height);
     // in web assembly, the gl window is resized before it is connected. need to set viewport manually.

@@ -214,12 +214,18 @@ void Definition::set_perspective_params(float fov_degrees,
     m_far_clipping = std::min(m_far_clipping, 1'000'000'000.f); // will be obscured by atmosphere anyways + depth based atmosphere will have numerical issues (show background atmosphere)
     m_viewport_size = viewport_size;
     m_field_of_view = fov_degrees;
-    m_projection_matrix = glm::perspective(
+    /*m_projection_matrix = glm::perspective(
         glm::radians(double(fov_degrees)),
         double(viewport_size.x) / double(viewport_size.y),
         double(m_near_clipping),
         double(m_far_clipping));
+*/
     //m_projection_matrix = MakeInfReversedZProjRH(glm::radians(double(fov_degrees)), double(viewport_size.x) / double(viewport_size.y), m_near_clipping); // for reverse z
+
+}
+
+void Definition::set_projection_matrix(glm::mat4 projection_matrix){
+    m_projection_matrix = projection_matrix;
 
 }
 
