@@ -337,27 +337,30 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
         correspondences = matcher(input_dict)
     mkpts_real = correspondences['keypoints0'].cpu().numpy()
     mkpts_rendered = correspondences['keypoints1'].cpu().numpy()
+    scaled_image = cv2.imread(f"rendered_images/{file_name}_scaled.jpg")
+    rendered_image = cv2.imread(f"rendered_images/{new_file_name}_0.jpg")
+    H,_ = cv2.findHomography(mkpts_real, mkpts_rendered, cv2.USAC_MAGSAC, 0.1845, 0.999999, 22000)
+    warp_image(file_name, scaled_image, rendered_image, H, width, height)
     draw_matches(mkpts_real,mkpts_rendered, img1, img2, None, f'matches/{file_name}_refined.jpg')
-    inlier_points1 = mkpts_rendered
-    index_y = np.round(inlier_points1[:, 1]).astype(int)
-    index_x = np.round(inlier_points1[:, 0]).astype(int)
+    index_y = np.round(mkpts_rendered[:, 1]).astype(int)
+    index_x = np.round(mkpts_rendered[:, 0]).astype(int)
 
     valid_indices = np.where(depth_image[index_y, index_x][:, :3].any(axis=1))
     mkpts_real = mkpts_real[valid_indices]
-    mkpts1 = mkpts_rendered[valid_indices]
-    ws_array1 = depth_image[index_y[valid_indices], index_x[valid_indices]][:, :3].astype(np.float32)
+    mkpts_rendered = mkpts_rendered[valid_indices]
+    position_buffer = depth_image[index_y[valid_indices], index_x[valid_indices]][:, :3].astype(np.float32)
 
     dist_coeffs = np.zeros((4, 1))
-    if (ws_array1.shape[0] < 4):
+    if (position_buffer.shape[0] < 4):
         return
     # SolvePnP returns the rotation and translation vectors
-    success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(ws_array1, mkpts_real,
+    success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(position_buffer, mkpts_real,
                                                                                         camera_matrix, distCoeffs=None,
                                                                                         flags=cv2.SOLVEPNP_ITERATIVE,
                                                                                         confidence=0.999999,
                                                                                         reprojectionError=1,
                                                                                         iterationsCount=20000)
-    success1, rotation_vector1, translation_vector1, pose_inliers1 = cv2.solvePnPRansac(ws_array1, mkpts1,
+    success1, rotation_vector1, translation_vector1, pose_inliers1 = cv2.solvePnPRansac(position_buffer, mkpts_rendered,
                                                                                         camera_matrix, distCoeffs=None,
                                                                                         flags=cv2.SOLVEPNP_ITERATIVE,
                                                                                         confidence=0.999999,
@@ -372,15 +375,16 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
         f'success: {success1} \n rotation vector: {rotation_vector1} \n  translation vector: {translation_vector1} \n')
     rotation_matrix_to_pitch_yaw_roll(R2)
     calculate_relative_transformation(R1, R2, translation_vector0, translation_vector1)
-    ws_array1 = ws_array1[pose_inliers0]
+
+    position_buffer = position_buffer[pose_inliers0]
     mkpts_real = mkpts_real[pose_inliers0]
-    rotation_vector0, translation_vector0 = cv2.solvePnPRefineLM(ws_array1, mkpts_real, camera_matrix, None, rotation_vector0, translation_vector0)
+    rotation_vector0, translation_vector0 = cv2.solvePnPRefineLM(position_buffer, mkpts_real, camera_matrix, None, rotation_vector0, translation_vector0)
     print(
         f'success: {success0} \n rotation vector: {rotation_vector0} \n  translation vector: {translation_vector0} \n')
     R1, _ = cv2.Rodrigues(rotation_vector0)
     rotation_matrix_to_pitch_yaw_roll(R1)
     if(optimize):
-        optimized_fov = optimize_fov(mkpts_real, ws_array1, rotation_vector0, translation_vector0, width, height, dist_coeffs,camera_matrix, fov)
+        optimized_fov = optimize_fov(mkpts_real, position_buffer, rotation_vector0, translation_vector0, width, height, dist_coeffs,camera_matrix, fov)
         print(f'Optimized FoV: {optimized_fov}')
         render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, optimized_fov, pitch, roll,camera_matrix, False)
 
@@ -463,7 +467,6 @@ def calculate_relative_transformation(R1, R2, adjusted_translation1, adjusted_tr
     print(f'Relative rotation: {relative_rotation} \n relative translation: {relative_translation}')
     return yaw, pitch, roll
 def warp_image(file_name,scaled_image, rendered_image, H, width, height):
-
     # Apply the warpPerspective function with the correct parameters
     warped_image = cv2.warpPerspective(rendered_image, H, (width, height), flags=cv2.WARP_INVERSE_MAP)
 
@@ -567,7 +570,7 @@ if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_7_0_MinGW_64_bit-Release/plain_renderer')
     # Path to plain_renderer.exe
     renderer_path = "plain_renderer.exe "
-    camera_path = "calib.json"
+    camera_path = ""
     image_path = select_image()
     camera_matrix, distortion_coefficients = extract_camera_calibration_data(camera_path)
 
