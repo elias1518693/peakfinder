@@ -13,6 +13,7 @@ from scipy.optimize import minimize
 import os
 import subprocess
 import cv2
+import json
 
 def plot_3d_points(points, special_point1, special_point2):
     fig = plt.figure()
@@ -36,6 +37,20 @@ def plot_3d_points(points, special_point1, special_point2):
     ax.set_zlabel('Z Axis')
 
     plt.show()
+
+
+def extract_camera_calibration_data(file_path):
+    # Read the JSON file
+    try:
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+        # Extract the camera matrix and distortion coefficients
+        camera_matrix = np.array(data.get('camera_matrix', None))
+        distortion_coefficients = data.get('distortion_coefficients', None)
+    except Exception as e:
+        print("Error:", str(e))
+        return None, None
+    return camera_matrix, distortion_coefficients
 
 
 def plot_3d_color(points, img):
@@ -130,21 +145,31 @@ def read_info(file_path):
         return None, None, None, None
 
 
-def scale_while_keeping_aspect(image_width, image_height, screen_width, screen_height):
+def scale_while_keeping_aspect(image_width, image_height, screen_width, screen_height, camera_matrix):
     image_aspect_ratio = image_width / image_height
     screen_aspect_ratio = screen_width / screen_height
+
     if image_aspect_ratio > screen_aspect_ratio:
-        scaled_width = screen_width
-        scaled_height = scaled_width / image_aspect_ratio
+        scale_factor = screen_width / image_width
     else:
-        scaled_height = screen_height
-        scaled_width = scaled_height * image_aspect_ratio
-    scaled_width = min(screen_width, int(scaled_width))
-    scaled_height = min(screen_height, int(scaled_height))
-    # Adjust dimensions to be divisible by 8 because loftr works better
-    scaled_width = scaled_width - scaled_width % 8
-    scaled_height = scaled_height - scaled_height % 8
-    return scaled_width, scaled_height
+        scale_factor = screen_height / image_height
+
+    scaled_width = image_width * scale_factor
+    scaled_height = image_height * scale_factor
+
+    # Ensure dimensions are divisible by 8 for optimization purposes
+    scaled_width = int(scaled_width) - int(scaled_width) % 8
+    scaled_height = int(scaled_height) - int(scaled_height) % 8
+
+    if(camera_matrix is not None):
+        camera_matrix = camera_matrix.copy()
+        camera_matrix[0, 0] *= scale_factor
+        camera_matrix[1, 1] *= scale_factor
+        camera_matrix[0, 2] *= scale_factor
+        camera_matrix[1, 2] *= scale_factor
+
+    return scaled_width, scaled_height, camera_matrix
+
 
 def dms_to_dd(dms):
     degrees, minutes, seconds = [0,0,0]
@@ -236,10 +261,10 @@ def readExif(file_path):
 
 
 
-def render_360_degrees(renderer_path, image_path, image_width, image_height, latitude, longitude, altitude, field_of_view):
+def render_360_degrees(renderer_path, image_path, image_width, image_height, latitude, longitude, altitude, field_of_view, camera_matrix):
     base_file_name, file_extension = os.path.splitext(os.path.basename(image_path))
     rendered_images = []
-    byte_data = start_plain_renderer(renderer_path, base_file_name, latitude, longitude, altitude, field_of_view, 0, 0, 0, width, height, 0)
+    byte_data = start_plain_renderer(renderer_path, base_file_name, latitude, longitude, altitude, field_of_view, camera_matrix,0, 0, 0, width, height, 0)
     bytes_per_image = image_width * image_height * 4 * 4
     # Split the byte data into individual images
     for i in range(0, len(byte_data), bytes_per_image):
@@ -250,8 +275,9 @@ def render_360_degrees(renderer_path, image_path, image_width, image_height, lat
 
 
 
-def calculate_reprojection_error(fov, mkpts0, ws_array1, width, height, dist_coeffs):
-    camera_matrix = calculate_camera_matrix(fov, width, height)
+def calculate_reprojection_error(fov, mkpts0, ws_array1, width, height, dist_coeffs, camera_matrix):
+    if (camera_matrix is None):
+        camera_matrix = calculate_camera_matrix(fov, width, height)
 
     rvec = np.array([[0], [0], [0]], dtype=float)
     tvec = np.array([[0], [0], [0]], dtype=float)
@@ -267,15 +293,15 @@ def calculate_reprojection_error(fov, mkpts0, ws_array1, width, height, dist_coe
     else:
         error = np.inf
     return error
-def optimize_fov(mkpts0, ws_array1, rotation_vector0, translation_vector0, width, height, dist_coeffs, initial_guess=90):
-    result = minimize(calculate_reprojection_error, x0=initial_guess, args=(mkpts0, ws_array1, width, height, dist_coeffs), method='Nelder-Mead')
+def optimize_fov(mkpts0, ws_array1, rotation_vector0, translation_vector0, width, height, dist_coeffs, camera_matrix, initial_guess=90):
+    result = minimize(calculate_reprojection_error, x0=initial_guess, args=(mkpts0, ws_array1, width, height, dist_coeffs, camera_matrix), method='Nelder-Mead')
     optimized_fov = result.x[0]
     return optimized_fov
 
 
-def start_plain_renderer(renderer_path, filename, lat, long, alt, fov, yaw, pitch, roll ,width, height, panorama):
+def start_plain_renderer(renderer_path, filename, lat, long, alt, fov, camera_matrix, yaw, pitch, roll ,width, height, panorama):
     try:
-        fx, fy, cx, cy = calculate_camera_parameters(fov, width, height)
+        fx, fy, cx, cy = extract_camera_parameters(camera_matrix)
         parameters = f"{lat} {long} {alt} {fov}"
         orientation = f"{yaw} {pitch} {roll}"
         translation = f"{fx} {fy} {cx} {cy}"
@@ -291,13 +317,13 @@ def start_plain_renderer(renderer_path, filename, lat, long, alt, fov, yaw, pitc
         print("Error:", str(e))
         return -1
 
-def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, fov, pitch, roll, optimize = True):
+def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, fov, pitch, roll,camera_matrix, optimize = True):
     file_name, file_extension = os.path.splitext(os.path.basename(image_path))
     if (optimize):
         new_file_name = f"{file_name}_result"
     else:
         new_file_name = f"{file_name}_result_optimized"
-    byte_data = start_plain_renderer(renderer_path, new_file_name, lat, long, alt, fov, yaw, pitch, roll, width, height, 1)
+    byte_data = start_plain_renderer(renderer_path, new_file_name, lat, long, alt, fov, camera_matrix, yaw, pitch, roll, width, height, 1)
     depth_image = decode_byte_array(byte_data, width, height, False)
     device = torch.device('cuda')
     matcher = KF.LoFTR(pretrained='outdoor')
@@ -324,7 +350,6 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
     dist_coeffs = np.zeros((4, 1))
     if (ws_array1.shape[0] < 4):
         return
-    camera_matrix = calculate_camera_matrix(fov, width, height)
     # SolvePnP returns the rotation and translation vectors
     success0, rotation_vector0, translation_vector0, pose_inliers0 = cv2.solvePnPRansac(ws_array1, mkpts_real,
                                                                                         camera_matrix, distCoeffs=None,
@@ -355,9 +380,9 @@ def render_result(renderer_path, image_path, width, height, yaw, lat, long, alt,
     R1, _ = cv2.Rodrigues(rotation_vector0)
     rotation_matrix_to_pitch_yaw_roll(R1)
     if(optimize):
-        optimized_fov = optimize_fov(mkpts_real, ws_array1, rotation_vector0, translation_vector0, width, height, dist_coeffs, fov)
+        optimized_fov = optimize_fov(mkpts_real, ws_array1, rotation_vector0, translation_vector0, width, height, dist_coeffs,camera_matrix, fov)
         print(f'Optimized FoV: {optimized_fov}')
-        render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, optimized_fov, pitch, roll, False)
+        render_result(renderer_path, image_path, width, height, yaw, lat, long, alt, optimized_fov, pitch, roll,camera_matrix, False)
 
 def calculate_camera_matrix(horizontal_fov_deg, width, height):
     horizontal_fov_rad = math.radians(horizontal_fov_deg)
@@ -378,6 +403,13 @@ def calculate_camera_parameters(horizontal_fov_deg, width, height):
     fy = height / (2.0 * math.tan(vertical_fov_rad / 2.0))
     cx = width / 2.0
     cy = height / 2.0
+    return fx, fy, cx, cy
+
+def extract_camera_parameters(camera_matrix):
+    fx = camera_matrix[0][0]
+    fy = camera_matrix[1][1]
+    cx = camera_matrix[0][2]
+    cy = camera_matrix[1][2]
     return fx, fy, cx, cy
 
 def draw_matches(mkpts0, mkpts1, img1, img2, inliers, path):
@@ -443,9 +475,9 @@ def warp_image(file_name,scaled_image, rendered_image, H, width, height):
     overlay_image_path = f"overlay_{file_name}.png"
     cv2.imwrite(overlay_image_path, overlay_image)
 
-def start_matching(image_path, screenwidth, screenheight, fov, byte_array):
+def start_matching(image_path, screenwidth, screenheight, fov, byte_array, camera_matrix):
     fov_vert = math.degrees(2.0 * math.atan(math.tan(math.radians(fov) / 2.0) * screenheight / screenwidth))
-    camera_matrix = calculate_camera_matrix(fov, screenwidth, screenheight)
+
     target_size = (int(screenwidth), int(screenheight))
     file_name, file_extension = os.path.splitext(os.path.basename(image_path))
     scaled_image_path = f"rendered_images/{file_name}_scaled.jpg"
@@ -512,7 +544,7 @@ def start_matching(image_path, screenwidth, screenheight, fov, byte_array):
 
         yaw, pitch, roll = calculate_relative_transformation(R_real, R_rendered, translation_vector_real, translation_vector_rendered)
 
-        match_prob = calculate_reprojection_error(fov, mkpts_real, ws_array1, width, height, None)
+        match_prob = calculate_reprojection_error(fov, mkpts_real, ws_array1, width, height, None, camera_matrix)
         print(f"Reprojection error: {match_prob}")
         if match_prob > best_match_prob or best_match_image_path == "":
             best_match_image_path = new_image_path
@@ -535,8 +567,11 @@ if __name__ == "__main__":
     os.chdir('../build-peakfinder-Desktop_Qt_6_7_0_MinGW_64_bit-Release/plain_renderer')
     # Path to plain_renderer.exe
     renderer_path = "plain_renderer.exe "
-    camera_path = ""
+    camera_path = "calib.json"
     image_path = select_image()
+    camera_matrix, distortion_coefficients = extract_camera_calibration_data(camera_path)
+
+
     if os.path.exists("testdatabase.db"):
         os.remove("testdatabase.db")
     if not image_path:
@@ -550,19 +585,23 @@ if __name__ == "__main__":
     if lat is not None:
         fov = math.degrees(fov)
     else:
-
         lat, long, height, fov = readExif(image_path)
 
     img = Image.open(image_path)
     width, height = img.size
-    width, height = scale_while_keeping_aspect(width, height, 960, 540)
+    width, height, camera_matrix = scale_while_keeping_aspect(width, height, 960, 540, camera_matrix)
+
+    if (camera_matrix is None):
+        camera_matrix = calculate_camera_matrix(fov, width, height)
+    else:
+        print(f"Loaded camera matrix from path {camera_path}, camera matrix: {camera_matrix} distortion coefficients: {distortion_coefficients})")
     # Start the renderer with the specified parameters and select an image
     print(f'calculated fov: {fov}')
 
-    byte_array = render_360_degrees(renderer_path,  image_path, width, height, lat, long, height, fov)
+    byte_array = render_360_degrees(renderer_path,  image_path, width, height, lat, long, height, fov, camera_matrix)
 
-    yaw, pitch, roll, x, y, z, best_array = start_matching(image_path, width, height, fov, byte_array)
+    yaw, pitch, roll, x, y, z, best_array = start_matching(image_path, width, height, fov, byte_array, camera_matrix)
     
-    render_result(renderer_path, image_path,width, height, yaw, lat, long, height, fov, pitch, roll)
+    render_result(renderer_path, image_path,width, height, yaw, lat, long, height, fov, pitch, roll, camera_matrix, True)
     
     
